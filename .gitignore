@@ -41,3 +41,6 @@ next-env.d.ts
 
 # supabase
 supabase/.temp/
+
+# impeccable review captures (regenerable)
+.impeccable/review/

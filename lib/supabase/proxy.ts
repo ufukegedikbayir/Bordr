@@ -8,6 +8,9 @@ import { getSupabaseEnv } from "./env";
 // protection is deny-by-default. Add (marketing) routes here as they ship.
 const PUBLIC_PATHS = ["/login", "/signup", "/auth"];
 
+// Signed-in users have no reason to see these; send them to the app.
+const AUTH_PAGES = ["/login", "/signup"];
+
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -15,6 +18,19 @@ function isPublicPath(pathname: string) {
 }
 
 export async function updateSession(request: NextRequest) {
+  const { pathname, searchParams } = request.nextUrl;
+
+  // If emailRedirectTo isn't in Supabase's Redirect URL allow-list, Supabase
+  // falls back to the Site URL ("/"). Forward the auth params to the handler.
+  if (
+    pathname === "/" &&
+    ["code", "token_hash", "error_code"].some((key) => searchParams.has(key))
+  ) {
+    const callbackUrl = request.nextUrl.clone();
+    callbackUrl.pathname = "/auth/callback";
+    return NextResponse.redirect(callbackUrl);
+  }
+
   const { url, anonKey } = getSupabaseEnv();
   let response = NextResponse.next({ request });
 
@@ -47,23 +63,31 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(data?.claims);
 
-  if (!isAuthenticated && !isPublicPath(request.nextUrl.pathname)) {
+  if (!isAuthenticated && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
-    loginUrl.searchParams.set(
-      "next",
-      request.nextUrl.pathname + request.nextUrl.search,
-    );
+    loginUrl.searchParams.set("next", pathname + request.nextUrl.search);
+    return redirectWithSession(loginUrl, response);
+  }
 
-    const redirect = NextResponse.redirect(loginUrl);
-    // Carry over any cookie changes (e.g. a cleared session) and cache headers.
-    response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-    response.headers.forEach((value, key) => {
-      if (key !== "x-middleware-next") redirect.headers.set(key, value);
-    });
-    return redirect;
+  if (isAuthenticated && AUTH_PAGES.includes(pathname)) {
+    const appUrl = request.nextUrl.clone();
+    appUrl.pathname = "/";
+    appUrl.search = "";
+    return redirectWithSession(appUrl, response);
   }
 
   return response;
+}
+
+// Carry over any cookie changes (refreshed or cleared session) and the
+// no-store cache headers onto a redirect.
+function redirectWithSession(url: URL, response: NextResponse) {
+  const redirect = NextResponse.redirect(url);
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+  response.headers.forEach((value, key) => {
+    if (key !== "x-middleware-next") redirect.headers.set(key, value);
+  });
+  return redirect;
 }
