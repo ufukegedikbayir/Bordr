@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T18:36:10.070827+00:00",
+  "title": "Design System: Bordr",
+  "extensions": {
+    "colorMeta": {
+      "green-channel": {
+        "role": "primary",
+        "displayName": "Green Channel",
+        "canonical": "oklch(0.44 0.1 163)",
+        "tonalRamp": [
+          "oklch(0.15 0.1 163)",
+          "oklch(0.25 0.1 163)",
+          "oklch(0.35 0.1 163)",
+          "oklch(0.45 0.1 163)",
+          "oklch(0.6 0.1 163)",
+          "oklch(0.75 0.1 163)",
+          "oklch(0.88 0.1 163)",
+          "oklch(0.95 0.1 163)"
+        ]
+      },
+      "red-channel": {
+        "role": "secondary",
+        "displayName": "Red Channel",
+        "canonical": "oklch(0.5 0.18 27)",
+        "tonalRamp": [
+          "oklch(0.15 0.15 27)",
+          "oklch(0.25 0.15 27)",
+          "oklch(0.35 0.15 27)",
+          "oklch(0.45 0.15 27)",
+          "oklch(0.6 0.15 27)",
+          "oklch(0.75 0.15 27)",
+          "oklch(0.88 0.15 27)",
+          "oklch(0.95 0.15 27)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Cool Ink",
+        "canonical": "oklch(0.21 0.02 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.015 255)",
+          "oklch(0.25 0.015 255)",
+          "oklch(0.35 0.015 255)",
+          "oklch(0.45 0.015 255)",
+          "oklch(0.6 0.015 255)",
+          "oklch(0.75 0.015 255)",
+          "oklch(0.88 0.015 255)",
+          "oklch(0.95 0.015 255)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool Ground",
+        "canonical": "oklch(0.985 0.003 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.004 255)",
+          "oklch(0.25 0.004 255)",
+          "oklch(0.35 0.004 255)",
+          "oklch(0.45 0.004 255)",
+          "oklch(0.6 0.004 255)",
+          "oklch(0.75 0.004 255)",
+          "oklch(0.88 0.004 255)",
+          "oklch(0.95 0.004 255)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and page titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions and alert text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels and button text."
+      },
+      "hint": {
+        "displayName": "Hint",
+        "purpose": "Helper text under fields."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 2px oklch(0.21 0.02 255 / 0.04), 0 12px 32px -12px oklch(0.21 0.02 255 / 0.1)",
+        "purpose": "Outermost container only."
+      },
+      {
+        "name": "button-lift",
+        "value": "0 1px 1px oklch(0.21 0.02 255 / 0.12)",
+        "purpose": "Primary buttons."
+      },
+      {
+        "name": "input-inset",
+        "value": "inset 0 1px 1px oklch(0.21 0.02 255 / 0.03)",
+        "purpose": "Text inputs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "150ms ease-out",
+        "purpose": "Hover, focus and border transitions."
+      },
+      {
+        "name": "auth-enter",
+        "value": "200ms ease-out, 4px rise + fade",
+        "purpose": "State swap inside a card (e.g. check-your-email). Reduced-motion safe."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action of a form.",
+      "html": "<button class=\"ds-btn-primary\">Sign in</button>",
+      "css": ".ds-btn-primary{height:40px;padding:0 16px;border:0;border-radius:8px;background:var(--accent,oklch(0.44 0.1 163));color:var(--accent-ink,oklch(0.99 0.008 163));font:500 14px/1 Geist,system-ui,sans-serif;box-shadow:0 1px 1px oklch(0.21 0.02 255/.12);transition:background-color 150ms ease-out;cursor:pointer}.ds-btn-primary:hover{background:var(--accent-hover,oklch(0.39 0.095 163))}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent,oklch(0.44 0.1 163))}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary actions beside a primary path.",
+      "html": "<button class=\"ds-btn-secondary\">Resend link</button>",
+      "css": ".ds-btn-secondary{height:40px;padding:0 16px;border:1px solid var(--hairline-strong,oklch(0.84 0.008 255));border-radius:8px;background:var(--surface,#fff);color:var(--ink,oklch(0.21 0.02 255));font:500 14px/1 Geist,system-ui,sans-serif;transition:background-color 150ms ease-out;cursor:pointer}.ds-btn-secondary:hover{background:var(--ground,oklch(0.985 0.003 255))}.ds-btn-secondary:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent,oklch(0.44 0.1 163))}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled field with a solid 2px green focus edge.",
+      "html": "<label class=\"ds-label\">Work email<input class=\"ds-input\" placeholder=\"name@company.com\"></label>",
+      "css": ".ds-label{display:grid;gap:6px;font:500 14px Geist,system-ui,sans-serif;color:var(--ink,oklch(0.21 0.02 255))}.ds-input{height:40px;padding:0 12px;border:1px solid var(--hairline-strong,oklch(0.84 0.008 255));border-radius:8px;background:var(--surface,#fff);color:inherit;font:400 14px Geist,system-ui,sans-serif;box-shadow:inset 0 1px 1px oklch(0.21 0.02 255/.03);outline:none;transition:border-color 150ms ease-out,box-shadow 150ms ease-out}.ds-input:focus{border-color:var(--accent,oklch(0.44 0.1 163));box-shadow:0 0 0 1px var(--accent,oklch(0.44 0.1 163))}"
+    },
+    {
+      "name": "Error Alert",
+      "kind": "custom",
+      "refersTo": "alert-error",
+      "description": "Inline error with an optional recovery action.",
+      "html": "<div class=\"ds-alert\" role=\"alert\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/></svg><span>Email or password is incorrect.</span></div>",
+      "css": ".ds-alert{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--danger-border,oklch(0.88 0.05 27));border-radius:8px;background:var(--danger-surface,oklch(0.97 0.014 27));color:var(--danger,oklch(0.5 0.18 27));font:400 14px/20px Geist,system-ui,sans-serif}.ds-alert svg{flex:none;margin-top:2px}"
+    },
+    {
+      "name": "Auth Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Single centered container for focused tasks.",
+      "html": "<div class=\"ds-card\"><h1>Sign in to Bordr</h1><p>Enter your work email and password.</p></div>",
+      "css": ".ds-card{max-width:400px;padding:32px;border:1px solid var(--hairline,oklch(0.91 0.006 255));border-radius:12px;background:var(--surface,#fff);box-shadow:0 1px 2px oklch(0.21 0.02 255/.04),0 12px 32px -12px oklch(0.21 0.02 255/.1);font-family:Geist,system-ui,sans-serif}.ds-card h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.015em;color:var(--ink,oklch(0.21 0.02 255))}.ds-card p{margin:6px 0 0;font-size:14px;line-height:22px;color:var(--ink-muted,oklch(0.47 0.015 255))}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Green Channel",
+    "overview": "Bordr's interface should feel like walking through a well-run border: one calm lane, clear signage, nothing to decode. Green means proceed (actions, focus, cleared states); red means stop and declare (errors only). Everything else is cool ink on a near-white ground.",
+    "keyCharacteristics": [
+      "Cool ink neutrals on a faintly blue-tinted ground; never warm cream.",
+      "Green is meaning, not decoration: action, focus, success.",
+      "Red appears only when something needs fixing.",
+      "1px hairlines and one soft card shadow; no glass, no gradients.",
+      "Every interactive element ships default, hover, focus, loading, disabled and error states."
+    ],
+    "rules": [
+      {
+        "name": "The Two Channels Rule",
+        "body": "Green means go and red means stop. Never use either as decoration, for brand flourishes or for charts that don't carry that meaning.",
+        "section": "colors"
+      },
+      {
+        "name": "The Cool Ink Rule",
+        "body": "Neutrals carry a slight blue tint (hue 255). Pure greys and warm creams are off-system.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Geist only. No display faces in UI, and monospace only for real code or data.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Lift Rule",
+        "body": "Only the outermost container gets the card shadow. Nested elements are bordered, never shadowed.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put recovery next to every error: what went wrong, and what to do now.",
+      "Do keep focus on a meaningful element through async actions, then move it to the field that needs attention.",
+      "Do theme the parts browsers draw: selection and caret use the green channel.",
+      "Do use lucide icons at 16px with their default stroke."
+    ],
+    "donts": [
+      "Don't use green or red for decoration (The Two Channels Rule).",
+      "Don't use warm cream grounds or pure greys (The Cool Ink Rule).",
+      "Don't add a second font family or set UI labels in a display face.",
+      "Don't shadow nested elements (The One Lift Rule).",
+      "Don't put marketing chrome (hero images, testimonials, badges) on product surfaces, and never invent proof."
+    ]
+  }
+}

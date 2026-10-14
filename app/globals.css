@@ -1,1 +1,96 @@
 @import "tailwindcss";
+
+/*
+ * Palette follows customs channel semantics: the "green channel" carries
+ * primary actions, focus and cleared states; the "red channel" is reserved
+ * for errors. Neutrals are cool ink.
+ */
+:root {
+  color-scheme: light;
+
+  --ground: oklch(0.985 0.003 255);
+  --surface: oklch(1 0 0);
+  --ink: oklch(0.21 0.02 255);
+  --ink-muted: oklch(0.47 0.015 255);
+  --hairline: oklch(0.91 0.006 255);
+  --hairline-strong: oklch(0.84 0.008 255);
+
+  --accent: oklch(0.44 0.1 163);
+  --accent-hover: oklch(0.39 0.095 163);
+  --accent-ink: oklch(0.99 0.008 163);
+  --accent-surface: oklch(0.965 0.02 163);
+
+  --danger: oklch(0.5 0.18 27);
+  --danger-surface: oklch(0.97 0.014 27);
+  --danger-border: oklch(0.88 0.05 27);
+
+  --shadow-card:
+    0 1px 2px oklch(0.21 0.02 255 / 0.04),
+    0 12px 32px -12px oklch(0.21 0.02 255 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --ground: oklch(0.165 0.008 255);
+    --surface: oklch(0.205 0.01 255);
+    --ink: oklch(0.96 0.005 255);
+    --ink-muted: oklch(0.72 0.012 255);
+    --hairline: oklch(0.29 0.012 255);
+    --hairline-strong: oklch(0.37 0.014 255);
+
+    --accent: oklch(0.74 0.13 163);
+    --accent-hover: oklch(0.8 0.12 163);
+    --accent-ink: oklch(0.2 0.03 163);
+    --accent-surface: oklch(0.26 0.04 163);
+
+    --danger: oklch(0.75 0.15 25);
+    --danger-surface: oklch(0.25 0.04 25);
+    --danger-border: oklch(0.4 0.08 25);
+
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3);
+  }
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-surface: var(--accent-surface);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-border: var(--danger-border);
+  --shadow-card: var(--shadow-card);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 24%, transparent);
+}
+
+input {
+  caret-color: var(--accent);
+}
+
+@keyframes auth-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
