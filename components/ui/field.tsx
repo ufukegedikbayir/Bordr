@@ -5,8 +5,9 @@ import { useId, useState, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils/cn";
 
-const inputClass = cn(
-  "h-10 w-full rounded-lg border border-hairline-strong bg-surface px-3 text-base text-ink sm:text-sm",
+// Shared by text inputs, textareas and selects; callers set the height.
+export const controlClass = cn(
+  "w-full rounded-lg border border-hairline-strong bg-surface px-3 text-base text-ink sm:text-sm",
   "shadow-[inset_0_1px_1px_oklch(0.21_0.02_255/0.03)] placeholder:text-ink-muted",
   "transition-[border-color,box-shadow] duration-150 ease-out outline-none",
   // Focus is a solid 2px green edge (1px border + 1px ring), matching buttons.
@@ -14,6 +15,8 @@ const inputClass = cn(
   "aria-invalid:border-danger aria-invalid:focus:border-danger aria-invalid:focus:ring-danger",
   "read-only:cursor-wait disabled:cursor-not-allowed disabled:opacity-60",
 );
+
+const inputClass = cn("h-10", controlClass);
 
 type FieldProps = Omit<ComponentProps<"input">, "id" | "aria-describedby"> & {
   label: string;
