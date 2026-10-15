@@ -9,7 +9,7 @@ import { InvoiceDownload } from "./InvoiceDownload";
 export type Outcome =
   | { status: "idle" }
   | { status: "pending"; country: CountryCode }
-  | { status: "success"; data: CustomsResult; description: string }
+  | { status: "success"; data: CustomsResult; description: string; saved: boolean }
   | { status: "error"; message: string };
 
 const LABELS = {
@@ -218,9 +218,17 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
 
       {outcome.status === "success" && (
         <div className="flex flex-col gap-3 border-t border-hairline bg-ground px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-          <p className="text-[13px] text-ink-muted">
-            The invoice uses placeholder party details. Verify every field before filing.
-          </p>
+          <div className="grid gap-1 text-[13px]">
+            <p className="text-ink-muted">
+              The invoice uses placeholder party details. Verify every field before filing.
+            </p>
+            {!outcome.saved && (
+              <p className="flex items-center gap-1.5 text-danger">
+                <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+                Not saved to your shipment history. Generate again to retry.
+              </p>
+            )}
+          </div>
           <InvoiceDownload description={outcome.description} result={outcome.data} />
         </div>
       )}
