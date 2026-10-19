@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { LayoutDashboard, LogOut, PackagePlus, type LucideIcon } from "lucide-react";
 
 import { signOut } from "@/app/(app)/actions";
@@ -17,19 +18,23 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-// A top bar on small screens, a fixed-width rail from md up.
-export function AppSidebar() {
+// A top bar on small screens, a fixed-width rail from md up. The workspace
+// switcher is a slot so the server can stream it in without blocking the shell.
+export function AppSidebar({ workspaceSwitcher }: { workspaceSwitcher: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-0 z-10 flex items-center gap-4 border-b border-hairline bg-surface px-4 py-2.5 md:h-dvh md:flex-col md:items-stretch md:gap-6 md:border-r md:border-b-0 md:px-3 md:py-5">
-      <Link
-        href="/"
-        aria-label="Bordr home"
-        className="rounded-md px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        <Logo />
-      </Link>
+    <aside className="sticky top-0 z-10 flex items-center gap-3 border-b border-hairline bg-surface px-4 py-2.5 md:h-dvh md:flex-col md:items-stretch md:gap-6 md:border-r md:border-b-0 md:px-3 md:py-5">
+      <div className="flex items-center gap-1 md:flex-col md:items-stretch md:gap-4">
+        <Link
+          href="/"
+          aria-label="Bordr home"
+          className="self-start rounded-md px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Logo />
+        </Link>
+        {workspaceSwitcher}
+      </div>
 
       <nav aria-label="Main" className="min-w-0 flex-1">
         <ul className="flex gap-0.5 md:flex-col md:gap-1">

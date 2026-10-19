@@ -5,6 +5,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { createServerClient } from "@/lib/supabase/server";
+import { isWorkspaceMember } from "@/services/workspaces/queries";
 
 import {
   COUNTRIES,
@@ -87,8 +88,8 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Classifies a product with Gemini, saves it to the user's shipment history
- * and returns the customs data for the UI.
+ * Classifies a product with Gemini, saves it to the active workspace's
+ * shipment history and returns the customs data for the UI.
  *
  * Returns errors instead of throwing: Next.js redacts thrown Server Action
  * messages in production, and these are meant for the user.
@@ -96,6 +97,7 @@ function describeError(error: unknown): string {
 export async function generateCustomsData(
   description: string,
   country: string,
+  activeWorkspaceId: string,
 ): Promise<CustomsActionResult> {
   // Server Actions are public endpoints: never spend AI quota on a signed-out caller.
   const supabase = await createServerClient();
@@ -112,6 +114,13 @@ export async function generateCustomsData(
 
   const destination = COUNTRIES.find(({ code }) => code === country);
   if (!destination) return { ok: false, error: "Choose a supported destination country." };
+
+  // The client names the workspace; never trust it. Checked before the AI
+  // call so a forged id costs no quota. RLS enforces the same rule on insert.
+  const workspaceId = String(activeWorkspaceId);
+  if (!(await isWorkspaceMember(supabase, user.id, workspaceId))) {
+    return { ok: false, error: "You don't have access to this workspace. Reload the page and try again." };
+  }
 
   const prompt = `Product: ${JSON.stringify(text)}
 Destination country: ${destination.name}
@@ -155,6 +164,7 @@ Give the most accurate 6-digit HS code, the HS category name (at most 6 words), 
       // AI quota is already spent) and tells the UI it isn't in the history.
       const { error: insertError } = await supabase.from("shipments").insert({
         user_id: user.id,
+        workspace_id: workspaceId,
         description: text,
         country: data.country,
         hs_code: data.hsCode,

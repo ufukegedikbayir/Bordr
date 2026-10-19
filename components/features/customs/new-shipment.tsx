@@ -10,8 +10,9 @@ import { preloadInvoice } from "./InvoiceDownload";
 import { ShipmentForm } from "./shipment-form";
 
 const UNEXPECTED_ERROR = "Something went wrong while analyzing your product. Try again.";
+const NO_WORKSPACE = "Your workspace couldn't be loaded. Reload the page and try again.";
 
-export function NewShipment() {
+export function NewShipment({ activeWorkspaceId }: { activeWorkspaceId: Promise<string | null> }) {
   const [description, setDescription] = useState("");
   const [country, setCountry] = useState<CountryCode>(COUNTRIES[0].code);
   const [outcome, setOutcome] = useState<Outcome>({ status: "idle" });
@@ -44,7 +45,10 @@ export function NewShipment() {
     preloadInvoice();
 
     try {
-      const result = await generateCustomsData(trimmed, country);
+      const workspaceId = await activeWorkspaceId;
+      const result = workspaceId
+        ? await generateCustomsData(trimmed, country, workspaceId)
+        : ({ ok: false, error: NO_WORKSPACE } as const);
       setOutcome(
         result.ok
           ? { status: "success", data: result.data, description: trimmed, saved: result.saved }
