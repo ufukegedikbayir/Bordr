@@ -13,24 +13,19 @@ export type ShipmentRow = {
   estimated_duty: string;
 };
 
-export type ShipmentHistory =
-  | { status: "ok"; shipments: ShipmentRow[] }
-  | { status: "signed-out" }
-  | { status: "error" };
+export type ShipmentHistory = { status: "ok"; shipments: ShipmentRow[] } | { status: "error" };
 
-/** The signed-in user's shipments, newest first. RLS also scopes rows to them. */
-export async function listShipments(): Promise<ShipmentHistory> {
+/**
+ * A workspace's shipments, newest first. Callers resolve the workspace (and
+ * the session) first; RLS returns nothing for workspaces the user isn't in.
+ */
+export async function listShipments(workspaceId: string): Promise<ShipmentHistory> {
   const supabase = await createServerClient();
-  // getUser() revalidates the session with the Supabase Auth server.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { status: "signed-out" };
 
   const { data, error } = await supabase
     .from("shipments")
     .select("id, created_at, description, country, hs_code, hs_description, estimated_duty")
-    .eq("user_id", user.id)
+    .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
 

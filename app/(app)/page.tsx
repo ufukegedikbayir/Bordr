@@ -11,15 +11,19 @@ import {
 } from "@/components/features/shipments/shipment-table";
 import { buttonClass } from "@/components/ui/button";
 import { listShipments } from "@/services/shipments/queries";
+import { getUserWorkspaces } from "@/services/workspaces/queries";
 
 export const metadata: Metadata = { title: "Dashboard · Bordr" };
 
 async function ShipmentHistory() {
-  const history = await listShipments();
+  const workspaces = await getUserWorkspaces();
 
   // proxy.ts should already have redirected; this guards against a matcher
   // gap, since the proxy must not be the only auth check.
-  if (history.status === "signed-out") redirect("/login");
+  if (workspaces.status === "signed-out") redirect("/login");
+  if (workspaces.status === "error") return <HistoryError />;
+
+  const history = await listShipments(workspaces.active.id);
   if (history.status === "error") return <HistoryError />;
 
   return <ShipmentTable shipments={history.shipments} />;
@@ -34,7 +38,7 @@ export default function DashboardPage() {
             Shipments
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-ink-muted">
-            Every customs classification you&apos;ve generated, newest first.
+            Every customs classification in this workspace, newest first.
           </p>
         </div>
         <Link href="/shipments/new" className={buttonClass("primary", "shrink-0 self-start sm:self-auto")}>
