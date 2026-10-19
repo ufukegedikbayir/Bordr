@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, PackagePlus, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, LogOut, PackagePlus, type LucideIcon } from "lucide-react";
 
+import { signOut } from "@/app/(app)/actions";
 import { Logo } from "@/components/features/auth/logo";
 import { cn } from "@/lib/utils/cn";
 
@@ -31,7 +32,7 @@ export function AppSidebar() {
       </Link>
 
       <nav aria-label="Main" className="min-w-0 flex-1">
-        <ul className="flex gap-1 md:flex-col">
+        <ul className="flex gap-0.5 md:flex-col md:gap-1">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
@@ -40,12 +41,12 @@ export function AppSidebar() {
                   href={href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium whitespace-nowrap",
+                    "flex h-9 items-center gap-2 rounded-md px-2 text-sm md:gap-2.5 md:px-2.5 font-medium whitespace-nowrap",
                     "transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent",
                     active ? "bg-ground text-ink ring-1 ring-hairline" : "text-ink-muted hover:bg-ground hover:text-ink",
                   )}
                 >
-                  <Icon aria-hidden className={cn("size-4 shrink-0", active && "text-accent")} />
+                  <Icon aria-hidden className={cn("hidden size-4 shrink-0 md:block", active && "text-accent")} />
                   {label}
                 </Link>
               </li>
@@ -53,6 +54,19 @@ export function AppSidebar() {
           })}
         </ul>
       </nav>
+
+      <form action={signOut} className="md:border-t md:border-hairline md:pt-3">
+        <button
+          type="submit"
+          className={cn(
+            "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-ink-muted",
+            "transition-colors duration-150 outline-none hover:bg-ground hover:text-ink focus-visible:ring-2 focus-visible:ring-accent",
+          )}
+        >
+          <LogOut aria-hidden className="size-4 shrink-0" />
+          <span className="sr-only md:not-sr-only">Sign out</span>
+        </button>
+      </form>
     </aside>
   );
 }

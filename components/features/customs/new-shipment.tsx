@@ -47,7 +47,7 @@ export function NewShipment() {
       const result = await generateCustomsData(trimmed, country);
       setOutcome(
         result.ok
-          ? { status: "success", data: result.data, description: trimmed }
+          ? { status: "success", data: result.data, description: trimmed, saved: result.saved }
           : { status: "error", message: result.error },
       );
     } catch {

@@ -87,7 +87,8 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Classifies a product with Gemini and returns customs data for the UI.
+ * Classifies a product with Gemini, saves it to the user's shipment history
+ * and returns the customs data for the UI.
  *
  * Returns errors instead of throwing: Next.js redacts thrown Server Action
  * messages in production, and these are meant for the user.
@@ -142,16 +143,30 @@ Give the most accurate 6-digit HS code, the HS category name (at most 6 words), 
         );
       }
 
-      return {
-        ok: true,
-        data: {
-          hsCode,
-          hsDescription: normalizeHsDescription(output.hsDescription) || "Description unavailable",
-          estimatedDuty,
-          requiredDocuments,
-          country: destination.code,
-        },
+      const data = {
+        hsCode,
+        hsDescription: normalizeHsDescription(output.hsDescription) || "Description unavailable",
+        estimatedDuty,
+        requiredDocuments,
+        country: destination.code,
       };
+
+      // Persist before returning. A failed save still returns the result (the
+      // AI quota is already spent) and tells the UI it isn't in the history.
+      const { error: insertError } = await supabase.from("shipments").insert({
+        user_id: user.id,
+        description: text,
+        country: data.country,
+        hs_code: data.hsCode,
+        hs_description: data.hsDescription,
+        estimated_duty: data.estimatedDuty,
+        documents: data.requiredDocuments,
+      });
+      if (insertError) {
+        console.error("[generateCustomsData] saving shipment failed:", insertError.code, insertError.message);
+      }
+
+      return { ok: true, data, saved: !insertError };
     } catch (error) {
       console.error(`[generateCustomsData] ${modelId} failed:`, describeError(error));
     }

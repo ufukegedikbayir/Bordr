@@ -1,28 +1,51 @@
+import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { Plus } from "lucide-react";
 
-import { createServerClient } from "@/lib/supabase/server";
+import {
+  HistoryError,
+  HistorySkeleton,
+  ShipmentTable,
+} from "@/components/features/shipments/shipment-table";
+import { buttonClass } from "@/components/ui/button";
+import { listShipments } from "@/services/shipments/queries";
 
-import { signOut } from "./actions";
+export const metadata: Metadata = { title: "Dashboard · Bordr" };
 
-export default async function DashboardPage() {
-  const supabase = await createServerClient();
-  // getUser() revalidates the session with the Supabase Auth server.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+async function ShipmentHistory() {
+  const history = await listShipments();
 
   // proxy.ts should already have redirected; this guards against a matcher
   // gap, since the proxy must not be the only auth check.
-  if (!user) redirect("/login");
+  if (history.status === "signed-out") redirect("/login");
+  if (history.status === "error") return <HistoryError />;
 
+  return <ShipmentTable shipments={history.shipments} />;
+}
+
+export default function DashboardPage() {
   return (
-    <div>
-      <p>Bordr System Diagnostic: Core Architecture Online</p>
-      <p>Database pipeline: online</p>
-      <p>Authenticated as: {user.email ?? user.id}</p>
-      <form action={signOut}>
-        <button type="submit">Sign out</button>
-      </form>
+    <div className="mx-auto w-full max-w-6xl">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-[-0.015em] text-balance sm:text-2xl">
+            Shipments
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-sm text-ink-muted">
+            Every customs classification you&apos;ve generated, newest first.
+          </p>
+        </div>
+        <Link href="/shipments/new" className={buttonClass("primary", "shrink-0 self-start sm:self-auto")}>
+          <Plus aria-hidden className="size-4" />
+          New shipment
+        </Link>
+      </header>
+
+      <Suspense fallback={<HistorySkeleton />}>
+        <ShipmentHistory />
+      </Suspense>
     </div>
   );
 }

@@ -36,5 +36,5 @@ export type CustomsResult = {
 };
 
 export type CustomsActionResult =
-  | { ok: true; data: CustomsResult }
+  | { ok: true; data: CustomsResult; saved: boolean }
   | { ok: false; error: string };
