@@ -9,7 +9,7 @@ import { InvoiceDownload } from "./InvoiceDownload";
 export type Outcome =
   | { status: "idle" }
   | { status: "pending"; country: CountryCode }
-  | { status: "success"; data: CustomsResult; description: string; saved: boolean }
+  | { status: "success"; data: CustomsResult; description: string; saved: boolean; logo: string | null }
   | { status: "error"; message: string };
 
 const LABELS = {
@@ -229,7 +229,7 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
               </p>
             )}
           </div>
-          <InvoiceDownload description={outcome.description} result={outcome.data} />
+          <InvoiceDownload description={outcome.description} result={outcome.data} logo={outcome.logo} />
         </div>
       )}
     </section>

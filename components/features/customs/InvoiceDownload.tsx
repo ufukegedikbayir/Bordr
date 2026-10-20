@@ -13,7 +13,7 @@ export const INVOICE_FILE_NAME = "commercial_invoice.pdf";
 const BUTTON =
   "inline-flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium sm:w-auto";
 
-type InvoiceDownloadProps = { description: string; result: CustomsResult };
+type InvoiceDownloadProps = { description: string; result: CustomsResult; logo: string | null };
 
 function Preparing() {
   return (
@@ -47,7 +47,7 @@ const InvoiceLink = dynamic(
   async () => {
     const [{ PDFDownloadLink }, { CommercialInvoice }] = await loadPdf();
 
-    return function InvoiceLink({ description, result }: InvoiceDownloadProps) {
+    return function InvoiceLink({ description, result, logo }: InvoiceDownloadProps) {
       // PDFDownloadLink re-renders the PDF whenever `document` changes identity,
       // so the element (and its issue date) must be stable between renders.
       const invoice = useMemo(
@@ -59,9 +59,10 @@ const InvoiceLink = dynamic(
             hsDescription={result.hsDescription}
             estimatedDuty={result.estimatedDuty}
             issuedAt={new Date()}
+            logoUrl={logo}
           />
         ),
-        [description, result],
+        [description, result, logo],
       );
 
       return (

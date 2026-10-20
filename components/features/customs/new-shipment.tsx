@@ -3,16 +3,18 @@
 import { useRef, useState } from "react";
 
 import { generateCustomsData } from "@/services/customs/actions";
+import type { Workspace } from "@/services/workspaces/queries";
 import { COUNTRIES, type CountryCode } from "@/services/customs/constants";
 
 import { CustomsResults, type Outcome } from "./customs-results";
 import { preloadInvoice } from "./InvoiceDownload";
+import { loadInvoiceLogo } from "./invoice-logo";
 import { ShipmentForm } from "./shipment-form";
 
 const UNEXPECTED_ERROR = "Something went wrong while analyzing your product. Try again.";
 const NO_WORKSPACE = "Your workspace couldn't be loaded. Reload the page and try again.";
 
-export function NewShipment({ activeWorkspaceId }: { activeWorkspaceId: Promise<string | null> }) {
+export function NewShipment({ activeWorkspace }: { activeWorkspace: Promise<Workspace | null> }) {
   const [description, setDescription] = useState("");
   const [country, setCountry] = useState<CountryCode>(COUNTRIES[0].code);
   const [outcome, setOutcome] = useState<Outcome>({ status: "idle" });
@@ -45,13 +47,17 @@ export function NewShipment({ activeWorkspaceId }: { activeWorkspaceId: Promise<
     preloadInvoice();
 
     try {
-      const workspaceId = await activeWorkspaceId;
-      const result = workspaceId
-        ? await generateCustomsData(trimmed, country, workspaceId)
-        : ({ ok: false, error: NO_WORKSPACE } as const);
+      const workspace = await activeWorkspace;
+      // The logo loads alongside the AI call, so it adds no wait.
+      const [result, logo] = workspace
+        ? await Promise.all([
+            generateCustomsData(trimmed, country, workspace.id),
+            loadInvoiceLogo(workspace.logoUrl),
+          ])
+        : [{ ok: false, error: NO_WORKSPACE } as const, null];
       setOutcome(
         result.ok
-          ? { status: "success", data: result.data, description: trimmed, saved: result.saved }
+          ? { status: "success", data: result.data, description: trimmed, saved: result.saved, logo }
           : { status: "error", message: result.error },
       );
     } catch {

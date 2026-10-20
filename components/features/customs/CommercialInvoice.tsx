@@ -1,4 +1,4 @@
-import { Document, Font, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 import { countryName, type CountryCode } from "@/services/customs/constants";
 
@@ -12,6 +12,8 @@ export type CommercialInvoiceProps = {
   hsDescription: string;
   estimatedDuty: string;
   issuedAt: Date;
+  /** The workspace logo (a data URI or URL); the text header is used without one. */
+  logoUrl?: string | null;
 };
 
 type Party = { name: string; lines: string[]; country: string; meta?: string };
@@ -63,6 +65,8 @@ const styles = StyleSheet.create({
   titleSub: { marginTop: 4, fontSize: 9, color: MUTED },
   brand: { alignItems: "flex-end" },
   brandName: { fontFamily: "Helvetica-Bold", fontSize: 15, letterSpacing: -0.3 },
+  // A box the logo scales down into, whatever its aspect ratio.
+  brandLogo: { maxWidth: 150, maxHeight: 44, objectFit: "contain" },
   sampleTag: {
     marginTop: 6,
     paddingVertical: 2,
@@ -185,6 +189,7 @@ export function CommercialInvoice({
   hsDescription,
   estimatedDuty,
   issuedAt,
+  logoUrl,
 }: CommercialInvoiceProps) {
   const destination = countryName(country);
   const consignee: Party = { ...CONSIGNEES[country], country: destination };
@@ -205,7 +210,12 @@ export function CommercialInvoice({
             <Text style={styles.titleSub}>For international customs clearance</Text>
           </View>
           <View style={styles.brand}>
-            <Text style={styles.brandName}>Bordr</Text>
+            {logoUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop
+              <Image src={logoUrl} style={styles.brandLogo} />
+            ) : (
+              <Text style={styles.brandName}>Bordr</Text>
+            )}
             <Text style={styles.sampleTag}>SAMPLE DATA</Text>
           </View>
         </View>

@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils/cn";
 import { isCountryCode } from "@/services/customs/constants";
 import type { ShipmentRow } from "@/services/shipments/queries";
 
+import { loadInvoiceLogo } from "./invoice-logo";
+
 // The renderer and template load in their own chunk on first use, so a table
 // of 100 rows ships 100 small buttons and no PDF code.
 const loadPdf = () =>
@@ -28,7 +30,13 @@ function fileName(shipment: ShipmentRow) {
 type Status = "idle" | "pending" | "error";
 
 /** Builds a past shipment's invoice in the browser on click and downloads it. */
-export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }) {
+export function DashboardInvoiceDownload({
+  shipment,
+  logoUrl,
+}: {
+  shipment: ShipmentRow;
+  logoUrl: string | null;
+}) {
   const [status, setStatus] = useState<Status>("idle");
   // A ref, not state, so a double click can't start two renders before re-render.
   const inFlight = useRef(false);
@@ -54,7 +62,10 @@ export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }
     setStatus("pending");
 
     try {
-      const [{ pdf }, { CommercialInvoice }] = await loadPdf();
+      const [[{ pdf }, { CommercialInvoice }], logo] = await Promise.all([
+        loadPdf(),
+        loadInvoiceLogo(logoUrl),
+      ]);
       const blob = await pdf(
         <CommercialInvoice
           description={shipment.description}
@@ -64,6 +75,7 @@ export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }
           estimatedDuty={shipment.estimated_duty}
           // A re-download reproduces the original document, so it keeps its date.
           issuedAt={new Date(shipment.created_at)}
+          logoUrl={logo}
         />,
       ).toBlob();
 

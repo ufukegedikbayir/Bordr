@@ -10,7 +10,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 export type WorkspaceRole = "owner" | "member";
 
-export type Workspace = { id: string; name: string; role: WorkspaceRole };
+export type Workspace = { id: string; name: string; role: WorkspaceRole; logoUrl: string | null };
 
 export type UserWorkspaces =
   | { status: "ok"; workspaces: Workspace[]; active: Workspace }
@@ -21,7 +21,7 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createServerClient>>;
 
 type MembershipRow = {
   role: WorkspaceRole;
-  workspace: { id: string; name: string } | null;
+  workspace: { id: string; name: string; logo_url: string | null } | null;
 };
 
 /**
@@ -40,7 +40,7 @@ export const getUserWorkspaces = cache(async (): Promise<UserWorkspaces> => {
   const [{ data, error }, cookieStore] = await Promise.all([
     supabase
       .from("workspace_members")
-      .select("role, workspace:workspaces!inner (id, name)")
+      .select("role, workspace:workspaces!inner (id, name, logo_url)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
     cookies(),
@@ -52,7 +52,7 @@ export const getUserWorkspaces = cache(async (): Promise<UserWorkspaces> => {
   }
 
   const workspaces = (data as unknown as MembershipRow[]).flatMap(({ role, workspace }) =>
-    workspace ? [{ id: workspace.id, name: workspace.name, role }] : [],
+    workspace ? [{ id: workspace.id, name: workspace.name, role, logoUrl: workspace.logo_url }] : [],
   );
 
   // Sign-up creates a personal workspace and its owner can't leave it, so
@@ -69,30 +69,39 @@ export const getUserWorkspaces = cache(async (): Promise<UserWorkspaces> => {
   return { status: "ok", workspaces, active };
 });
 
-/** The active workspace's id, or null when there's none to act in. */
-export async function getActiveWorkspaceId(): Promise<string | null> {
+/** The active workspace, or null when there's none to act in. */
+export async function getActiveWorkspace(): Promise<Workspace | null> {
   const result = await getUserWorkspaces();
-  return result.status === "ok" ? result.active.id : null;
+  return result.status === "ok" ? result.active : null;
 }
 
-/** Whether `userId` belongs to `workspaceId`. For authorizing writes before they happen. */
-export async function isWorkspaceMember(
+/** `userId`'s role in `workspaceId`, or null if they aren't a member. For authorizing writes. */
+export async function getWorkspaceRole(
   supabase: SupabaseServerClient,
   userId: string,
   workspaceId: string,
-): Promise<boolean> {
-  if (!UUID_PATTERN.test(workspaceId)) return false;
+): Promise<WorkspaceRole | null> {
+  if (!UUID_PATTERN.test(workspaceId)) return null;
 
   const { data, error } = await supabase
     .from("workspace_members")
-    .select("workspace_id")
+    .select("role")
     .eq("workspace_id", workspaceId)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
-    console.error("[isWorkspaceMember] query failed:", error.code, error.message);
-    return false;
+    console.error("[getWorkspaceRole] query failed:", error.code, error.message);
+    return null;
   }
-  return data !== null;
+  return (data?.role as WorkspaceRole | undefined) ?? null;
+}
+
+/** Whether `userId` belongs to `workspaceId`. */
+export async function isWorkspaceMember(
+  supabase: SupabaseServerClient,
+  userId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  return (await getWorkspaceRole(supabase, userId, workspaceId)) !== null;
 }
