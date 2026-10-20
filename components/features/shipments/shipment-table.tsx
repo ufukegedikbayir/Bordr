@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, PackageOpen } from "lucide-react";
 
+import { DashboardInvoiceDownload } from "@/components/features/customs/DashboardInvoiceDownload";
 import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils/cn";
 import { COUNTRIES } from "@/services/customs/constants";
@@ -13,6 +14,7 @@ const COLUMNS = [
   { label: "Destination", className: "w-44" },
   { label: "HS code", className: "w-32" },
   { label: "Duty", className: "w-24 text-right" },
+  { label: "Actions", className: "w-16 text-right", srOnly: true },
 ] as const;
 
 // Edge cells get the card's 24px inset; inner cells 16px.
@@ -58,7 +60,7 @@ function TableHead() {
             scope="col"
             className={cn(CELL, "h-9 text-left text-xs font-medium text-ink-muted", "className" in col && col.className)}
           >
-            {label}
+            {"srOnly" in col ? <span className="sr-only">{label}</span> : label}
           </th>
         ))}
       </tr>
@@ -108,6 +110,9 @@ function ShipmentTableRow({ shipment }: { shipment: ShipmentRow }) {
       <td className={cn(CELL, "py-3 text-right align-top font-medium tabular-nums")}>
         {shipment.estimated_duty}
       </td>
+      <td className={cn(CELL, "py-1.5 text-right align-top")}>
+        <DashboardInvoiceDownload shipment={shipment} />
+      </td>
     </tr>
   );
 }
@@ -122,7 +127,7 @@ export function ShipmentTable({ shipments }: { shipments: ShipmentRow[] }) {
   return (
     <Card title="History" meta={meta}>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[44rem] text-sm">
+        <table className="w-full min-w-[48rem] text-sm">
           <caption className="sr-only">Your shipments, newest first</caption>
           <TableHead />
           <tbody>
@@ -183,7 +188,7 @@ export function HistorySkeleton() {
   return (
     <Card title="History">
       <div aria-hidden className="overflow-x-auto">
-        <table className="w-full min-w-[44rem] text-sm">
+        <table className="w-full min-w-[48rem] text-sm">
           <TableHead />
           <tbody>
             {SKELETON_ROWS.map((width, i) => (
@@ -204,6 +209,9 @@ export function HistorySkeleton() {
                 </td>
                 <td className={cn(CELL, "py-3")}>
                   <div className="skeleton ml-auto h-3.5 w-10 rounded" />
+                </td>
+                <td className={cn(CELL, "py-3")}>
+                  <div className="skeleton ml-auto size-5 rounded-md" />
                 </td>
               </tr>
             ))}

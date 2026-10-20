@@ -10,6 +10,10 @@ export const COUNTRIES = [
 
 export type CountryCode = (typeof COUNTRIES)[number]["code"];
 
+export function isCountryCode(code: string): code is CountryCode {
+  return COUNTRIES.some((country) => country.code === code);
+}
+
 export function countryName(code: CountryCode): string {
   return COUNTRIES.find((country) => country.code === code)?.name ?? code;
 }
