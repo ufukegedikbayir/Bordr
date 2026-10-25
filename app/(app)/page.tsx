@@ -26,7 +26,7 @@ async function ShipmentHistory() {
   const history = await listShipments(workspaces.active.id);
   if (history.status === "error") return <HistoryError />;
 
-  return <ShipmentTable shipments={history.shipments} />;
+  return <ShipmentTable shipments={history.shipments} logoUrl={workspaces.active.logoUrl} />;
 }
 
 export default function DashboardPage() {

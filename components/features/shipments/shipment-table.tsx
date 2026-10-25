@@ -78,7 +78,7 @@ function HsCode({ code }: { code: string }) {
   );
 }
 
-function ShipmentTableRow({ shipment }: { shipment: ShipmentRow }) {
+function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUrl: string | null }) {
   const created = new Date(shipment.created_at);
   const destination = COUNTRIES.find(({ code }) => code === shipment.country);
 
@@ -111,13 +111,14 @@ function ShipmentTableRow({ shipment }: { shipment: ShipmentRow }) {
         {shipment.estimated_duty}
       </td>
       <td className={cn(CELL, "py-1.5 text-right align-top")}>
-        <DashboardInvoiceDownload shipment={shipment} />
+        <DashboardInvoiceDownload shipment={shipment} logoUrl={logoUrl} />
       </td>
     </tr>
   );
 }
 
-export function ShipmentTable({ shipments }: { shipments: ShipmentRow[] }) {
+/** `logoUrl` is the workspace logo for the invoices these rows download. */
+export function ShipmentTable({ shipments, logoUrl }: { shipments: ShipmentRow[]; logoUrl: string | null }) {
   if (shipments.length === 0) return <EmptyHistory />;
 
   const count = shipments.length;
@@ -132,7 +133,7 @@ export function ShipmentTable({ shipments }: { shipments: ShipmentRow[] }) {
           <TableHead />
           <tbody>
             {shipments.map((shipment) => (
-              <ShipmentTableRow key={shipment.id} shipment={shipment} />
+              <ShipmentTableRow key={shipment.id} shipment={shipment} logoUrl={logoUrl} />
             ))}
           </tbody>
         </table>

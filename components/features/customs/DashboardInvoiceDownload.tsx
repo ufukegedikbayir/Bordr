@@ -5,8 +5,10 @@ import { CircleAlert, Download } from "lucide-react";
 
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils/cn";
-import { isCountryCode } from "@/services/customs/constants";
+import { getShipmentInvoice } from "@/services/shipments/actions";
 import type { ShipmentRow } from "@/services/shipments/queries";
+
+import { loadInvoiceLogo } from "./invoice-logo";
 
 // The renderer and template load in their own chunk on first use, so a table
 // of 100 rows ships 100 small buttons and no PDF code.
@@ -21,32 +23,33 @@ function preload() {
 // Long enough for every browser to start the download before the URL dies.
 const REVOKE_DELAY_MS = 10_000;
 
-function fileName(shipment: ShipmentRow) {
-  return `commercial_invoice_${shipment.created_at.slice(0, 10)}_${shipment.id.slice(0, 8)}.pdf`;
-}
-
 type Status = "idle" | "pending" | "error";
 
 /** Builds a past shipment's invoice in the browser on click and downloads it. */
-export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }) {
+export function DashboardInvoiceDownload({
+  shipment,
+  logoUrl,
+}: {
+  shipment: ShipmentRow;
+  logoUrl: string | null;
+}) {
   const [status, setStatus] = useState<Status>("idle");
   // A ref, not state, so a double click can't start two renders before re-render.
   const inFlight = useRef(false);
 
-  if (!isCountryCode(shipment.country)) {
+  // Earlier shipments lack the parties, values and weights an invoice needs.
+  const invoiceNumber = shipment.invoice_number;
+  if (!invoiceNumber) {
     return (
       <span
-        title="Invoices aren't available for this destination"
+        title="Created before invoices carried full legal details. Generate it again to get an invoice."
         className="inline-grid size-8 place-items-center text-hairline-strong"
       >
         <Download aria-hidden className="size-4" />
-        <span className="sr-only">Invoice unavailable for this destination</span>
+        <span className="sr-only">No invoice: created before invoices carried full legal details</span>
       </span>
     );
   }
-
-  // Narrowed above; captured as a const so the hoisted handler keeps the type.
-  const country = shipment.country;
 
   async function download() {
     if (inFlight.current) return;
@@ -54,23 +57,21 @@ export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }
     setStatus("pending");
 
     try {
-      const [{ pdf }, { CommercialInvoice }] = await loadPdf();
-      const blob = await pdf(
-        <CommercialInvoice
-          description={shipment.description}
-          country={country}
-          hsCode={shipment.hs_code}
-          hsDescription={shipment.hs_description}
-          estimatedDuty={shipment.estimated_duty}
-          // A re-download reproduces the original document, so it keeps its date.
-          issuedAt={new Date(shipment.created_at)}
-        />,
-      ).toBlob();
+      // The invoice is rebuilt from the saved record, so a re-download matches
+      // the original exactly (number, date, parties, values).
+      const [[{ pdf }, { CommercialInvoice }], logo, invoice] = await Promise.all([
+        loadPdf(),
+        loadInvoiceLogo(logoUrl),
+        getShipmentInvoice(shipment.id),
+      ]);
+      if (!invoice) throw new Error(`No invoice data for shipment ${shipment.id}`);
+
+      const blob = await pdf(<CommercialInvoice invoice={invoice} logoUrl={logo} />).toBlob();
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = fileName(shipment);
+      link.download = `${invoiceNumber}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
       setStatus("idle");
@@ -87,7 +88,7 @@ export function DashboardInvoiceDownload({ shipment }: { shipment: ShipmentRow }
       ? "Preparing invoice…"
       : status === "error"
         ? "Couldn't prepare the invoice. Try again"
-        : "Download commercial invoice";
+        : `Download commercial invoice ${invoiceNumber}`;
 
   return (
     <button
