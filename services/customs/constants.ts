@@ -1,7 +1,7 @@
 // Shared by the customs Server Action and the UI. Kept out of actions.ts
 // because a "use server" module may only export async functions.
 
-import type { InvoiceData } from "./invoice";
+import type { ShipmentDocuments } from "./documents";
 
 export const COUNTRIES = [
   { code: "US", name: "United States" },
@@ -44,8 +44,8 @@ export type CustomsResult = {
 };
 
 export type CustomsActionResult =
-  /** `invoice` is null when the shipment couldn't be saved: an invoice needs its saved number. */
-  | { ok: true; data: CustomsResult; invoice: InvoiceData | null }
+  /** `documents` is null when the shipment couldn't be saved: documents need its saved number. */
+  | { ok: true; data: CustomsResult; documents: ShipmentDocuments | null }
   | {
       ok: false;
       error: string;

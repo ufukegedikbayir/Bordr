@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { PROFILE_REQUIREMENTS, isProfileComplete, type CompanyProfile } from "@/services/workspaces/profile";
+import { listCarriers } from "@/services/carriers/queries";
 import { getActiveWorkspace, getCompanyProfile, type Workspace } from "@/services/workspaces/queries";
 
 export const metadata: Metadata = { title: "New shipment · Bordr" };
@@ -89,15 +90,21 @@ async function ShipmentWorkspace() {
 
   // If the profile can't be read, let the form through: the server refuses
   // the shipment with a clear message if the profile really is incomplete.
-  const profile = await getCompanyProfile(workspace.id);
+  const [profile, carriers] = await Promise.all([getCompanyProfile(workspace.id), listCarriers(workspace.id)]);
   if (profile && !isProfileComplete(profile)) return <ProfileGate workspace={workspace} profile={profile} />;
 
-  return <NewShipment workspace={workspace} />;
+  return (
+    <NewShipment
+      workspace={workspace}
+      carriers={carriers}
+      origin={{ city: profile?.city ?? null, countryCode: profile?.countryCode ?? null }}
+    />
+  );
 }
 
 function ShipmentSkeleton() {
   return (
-    <div aria-hidden className="grid items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <div aria-hidden className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="rounded-xl border border-hairline bg-surface shadow-card">
         <div className="h-13 border-b border-hairline" />
         <div className="grid gap-4 p-6">
@@ -114,12 +121,12 @@ function ShipmentSkeleton() {
 
 export default function NewShipmentPage() {
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="mx-auto w-full max-w-7xl">
       <header className="mb-8">
         <h1 className="text-xl font-semibold tracking-[-0.015em] sm:text-2xl">New shipment</h1>
         <p className="mt-1.5 max-w-2xl text-sm text-ink-muted">
-          Declare the goods and delivery terms. Bordr classifies them, estimates import duty and
-          issues a commercial invoice in your company&apos;s name.
+          Declare the goods, packages and transport once. Bordr classifies the goods and issues the
+          commercial invoice, packing list, CMR and certificate of origin application in your company&apos;s name.
         </p>
       </header>
 

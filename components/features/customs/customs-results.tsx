@@ -4,9 +4,10 @@ import { ArrowRight, CircleAlert, FileText, TriangleAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 import { countryName, type CountryCode, type CustomsResult } from "@/services/customs/constants";
-import type { InvoiceData, ShipmentFormValues } from "@/services/customs/invoice";
+import type { ShipmentDocuments } from "@/services/customs/documents";
+import type { ShipmentFormValues } from "@/services/customs/shipment-input";
 
-import { InvoiceDownload } from "./InvoiceDownload";
+import { DocumentList } from "./document-list";
 
 export type Outcome =
   | { status: "idle" }
@@ -14,8 +15,8 @@ export type Outcome =
   | {
       status: "success";
       data: CustomsResult;
-      /** Null when the shipment couldn't be saved; an invoice needs its saved number. */
-      invoice: InvoiceData | null;
+      /** Null when the shipment couldn't be saved; documents need its saved number. */
+      documents: ShipmentDocuments | null;
       logo: string | null;
       /** The values this result was generated from, to detect later edits. */
       submitted: ShipmentFormValues;
@@ -204,8 +205,8 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
         {outcome.status === "idle" && (
           <>
             <p className="mb-6 text-sm text-ink-muted">
-              Fill in the shipment details. The HS code, duty estimate, required documents and the
-              commercial invoice will appear here.
+              Fill in the shipment details. The HS code, duty estimate and compliance notes will appear
+              here, with the invoice, packing list, CMR and certificate of origin application.
             </p>
             <IdleRows />
           </>
@@ -250,26 +251,26 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
       </div>
 
       {outcome.status === "success" && (
-        <div className="flex flex-col gap-3 border-t border-hairline bg-ground px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-          <div className="grid gap-1 text-[13px]">
-            {outcome.invoice ? (
-              <>
+        <div className="grid gap-4 border-t border-hairline bg-ground px-6 py-5">
+          {outcome.documents ? (
+            <>
+              <div className="grid gap-1 text-[13px]">
                 <p className="font-medium text-ink">
-                  Invoice <span className="tabular-nums">{outcome.invoice.invoiceNumber}</span> saved to your
+                  Shipment <span className="tabular-nums">{outcome.documents.invoice.invoiceNumber}</span> saved to your
                   history
                 </p>
                 <p className="text-ink-muted">
-                  You sign it as the exporter. Check every figure before the goods travel.
+                  Every document is built from the same record. Check each figure before you sign.
                 </p>
-              </>
-            ) : (
-              <p className="flex items-center gap-1.5 text-danger">
-                <CircleAlert aria-hidden className="size-3.5 shrink-0" />
-                Not saved, so no invoice was issued. Generate again to retry.
-              </p>
-            )}
-          </div>
-          {outcome.invoice && <InvoiceDownload invoice={outcome.invoice} logo={outcome.logo} />}
+              </div>
+              <DocumentList documents={outcome.documents} logo={outcome.logo} />
+            </>
+          ) : (
+            <p className="flex items-center gap-1.5 text-[13px] text-danger">
+              <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+              Not saved, so no documents were issued. Generate again to retry.
+            </p>
+          )}
         </div>
       )}
     </section>

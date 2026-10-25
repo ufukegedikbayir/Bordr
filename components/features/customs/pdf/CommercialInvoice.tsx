@@ -1,23 +1,8 @@
-import { Document, Font, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 import { INCOTERMS, regionName, type InvoiceData, type InvoiceParty } from "@/services/customs/invoice";
 
-// Plex covers Latin Extended (ł, ş, ő, č …), which the built-in Helvetica
-// can't draw, so real company names and addresses print correctly. The
-// server path exists for rendering the template in Node (tests, scripts).
-const FONT_BASE =
-  typeof window === "undefined" ? `${globalThis.process?.cwd?.() ?? ""}/public/fonts` : "/fonts";
-
-Font.register({
-  family: "Plex",
-  fonts: [
-    { src: `${FONT_BASE}/IBMPlexSans-Regular.woff`, fontWeight: 400 },
-    { src: `${FONT_BASE}/IBMPlexSans-SemiBold.woff`, fontWeight: 600 },
-  ],
-});
-
-// Never hyphenate words mid-line: legal documents should wrap whole words only.
-Font.registerHyphenationCallback((word) => [word]);
+import { country, formatDate, integer, kilograms, money } from "./kit";
 
 export type CommercialInvoiceProps = {
   invoice: InvoiceData;
@@ -129,24 +114,6 @@ const styles = StyleSheet.create({
     color: MUTED,
   },
 });
-
-const money = new Intl.NumberFormat("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const kilograms = new Intl.NumberFormat("en-GB", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const integer = new Intl.NumberFormat("en-GB");
-
-// Unambiguous across locales ("25 October 2026"), and pinned to UTC like the record.
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function country(code: string) {
-  return `${regionName(code)} (${code})`;
-}
 
 function Label({ n, children }: { n?: number; children: string }) {
   return (
