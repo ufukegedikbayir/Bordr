@@ -1,6 +1,8 @@
 // Shared by the customs Server Action and the UI. Kept out of actions.ts
 // because a "use server" module may only export async functions.
 
+import type { InvoiceData } from "./invoice";
+
 export const COUNTRIES = [
   { code: "US", name: "United States" },
   { code: "GB", name: "United Kingdom" },
@@ -37,8 +39,16 @@ export type CustomsResult = {
   requiredDocuments: string[];
   /** Destination the estimate was generated for */
   country: CountryCode;
+  /** Short compliance flags from the AI, e.g. a missing certificate. May be empty. */
+  complianceNotes: string[];
 };
 
 export type CustomsActionResult =
-  | { ok: true; data: CustomsResult; saved: boolean }
-  | { ok: false; error: string };
+  /** `invoice` is null when the shipment couldn't be saved: an invoice needs its saved number. */
+  | { ok: true; data: CustomsResult; invoice: InvoiceData | null }
+  | {
+      ok: false;
+      error: string;
+      reason?: "invalid" | "profile_incomplete";
+      fieldErrors?: Partial<Record<string, string[]>>;
+    };

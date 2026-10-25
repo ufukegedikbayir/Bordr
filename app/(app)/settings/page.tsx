@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
+import { CompanyProfileForm } from "@/components/features/workspaces/company-profile-form";
 import { LogoUploader } from "@/components/features/workspaces/logo-uploader";
 import { Alert } from "@/components/ui/alert";
-import { getUserWorkspaces } from "@/services/workspaces/queries";
+import { getCompanyProfile, getUserWorkspaces } from "@/services/workspaces/queries";
 
 export const metadata: Metadata = { title: "Settings · Bordr" };
 
@@ -20,7 +21,7 @@ function Section({ title, description, children }: { title: string; description:
   );
 }
 
-async function LogoSettings() {
+async function WorkspaceSettings() {
   const result = await getUserWorkspaces();
 
   // proxy.ts should already have redirected; the proxy must not be the only check.
@@ -35,35 +36,63 @@ async function LogoSettings() {
   }
 
   const { active } = result;
+  const profile = await getCompanyProfile(active.id);
+  const canEdit = active.role === "owner";
+
   return (
-    <Section
-      title="Invoice logo"
+    <div className="grid gap-6">
+      <Section
+        title="Company profile"
+        description={
+          <>
+            Printed as the exporter on every invoice issued in{" "}
+            <span className="font-medium text-ink">{active.name}</span>. Customs check these against
+            official registers, so enter them exactly as registered.
+          </>
+        }
+      >
+        {profile ? (
+          <CompanyProfileForm key={active.id} workspaceId={active.id} profile={profile} canEdit={canEdit} />
+        ) : (
+          <Alert>
+            <p>Couldn&apos;t load the company profile. Refresh the page to try again.</p>
+          </Alert>
+        )}
+      </Section>
+
+      <Section
+        title="Invoice logo"
       description={
         <>
-          Replaces the Bordr wordmark on commercial invoices generated in{" "}
+          Shown in the invoice header in place of your company name, on invoices issued in{" "}
           <span className="font-medium text-ink">{active.name}</span>.
         </>
       }
     >
       {/* Keyed so switching workspace starts from a clean slate. */}
-      <LogoUploader
-        key={active.id}
-        workspaceId={active.id}
-        logoUrl={active.logoUrl}
-        canEdit={active.role === "owner"}
-      />
-    </Section>
+        <LogoUploader key={active.id} workspaceId={active.id} logoUrl={active.logoUrl} canEdit={canEdit} />
+      </Section>
+    </div>
   );
 }
 
-function LogoSettingsSkeleton() {
+function SettingsSkeleton() {
   return (
-    <Section title="Invoice logo" description="Replaces the Bordr wordmark on commercial invoices.">
-      <div aria-hidden className="skeleton min-h-36 rounded-xl" />
+    <div className="grid gap-6">
+      <Section title="Company profile" description="Printed as the exporter on every invoice.">
+        <div aria-hidden className="grid gap-4">
+          <div className="skeleton h-10 rounded-lg" />
+          <div className="skeleton h-10 rounded-lg" />
+          <div className="skeleton h-10 rounded-lg" />
+        </div>
+      </Section>
+      <Section title="Invoice logo" description="Shown in the header of commercial invoices.">
+        <div aria-hidden className="skeleton min-h-36 rounded-xl" />
+      </Section>
       <p role="status" className="sr-only">
         Loading workspace settings…
       </p>
-    </Section>
+    </div>
   );
 }
 
@@ -75,8 +104,8 @@ export default function SettingsPage() {
         <p className="mt-1.5 text-sm text-ink-muted">How your workspace appears on the documents you generate.</p>
       </header>
 
-      <Suspense fallback={<LogoSettingsSkeleton />}>
-        <LogoSettings />
+      <Suspense fallback={<SettingsSkeleton />}>
+        <WorkspaceSettings />
       </Suspense>
     </div>
   );

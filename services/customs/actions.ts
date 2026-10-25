@@ -5,13 +5,18 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { createServerClient } from "@/lib/supabase/server";
-import { isWorkspaceMember } from "@/services/workspaces/queries";
+import { isProfileComplete } from "@/services/workspaces/profile";
+import { getCompanyProfile, isWorkspaceMember } from "@/services/workspaces/queries";
 
+import { COUNTRIES, type CustomsActionResult } from "./constants";
 import {
-  COUNTRIES,
-  MAX_DESCRIPTION_LENGTH,
-  type CustomsActionResult,
-} from "./constants";
+  INCOTERMS,
+  INVOICE_COLUMNS,
+  invoiceFromRow,
+  regionName,
+  shipmentInputSchema,
+  type ShipmentFormValues,
+} from "./invoice";
 
 // Google's newest Flash models are volatile under load (503s, stalls) and the
 // free tier rate-limits per model (429), so a second model is the retry and
@@ -22,8 +27,17 @@ const MODELS = ["gemini-3.6-flash", "gemini-3.1-flash-lite"] as const;
 const REQUEST_TIMEOUT_MS = 12_000;
 const AI_UNAVAILABLE = "The AI service is unavailable right now. Try again in a moment.";
 
-const SYSTEM_PROMPT =
-  "Expert customs broker classifying products. Return exact JSON. Keep description under 6 words.";
+// The AI classifies and reviews; it never supplies a declared fact. Parties,
+// values, weights, origin and the Incoterm come from the user and the
+// company profile, because the exporter signs the invoice as true.
+const SYSTEM_PROMPT = `You are a senior customs broker and trade compliance officer for international road freight.
+You receive facts an exporter has declared for one commercial invoice line. Treat them as given: never change, invent or restate them.
+Your job:
+1. Classify the goods: the most accurate 6-digit HS code and its category name (at most 6 words).
+2. Estimate the destination's import duty for these goods from this origin, as a percentage of customs value.
+3. List the documents customs and the carrier will strictly require for this shipment by road (e.g. Commercial Invoice, Packing List, CMR Consignment Note, Certificate of Origin, Export Declaration).
+4. Give up to 3 short compliance notes (one sentence each) only where something needs the exporter's attention: e.g. a preferential origin proof that could reduce duty, licences or restrictions for this product, an Incoterm that makes the exporter responsible for import duties and VAT, or declared weights or values that look implausible for the goods. Return an empty list if nothing stands out.
+Return exact JSON.`;
 
 // The .describe() hints steer formatting; the normalizers below enforce it.
 const customsSchema = z.object({
@@ -37,6 +51,9 @@ const customsSchema = z.object({
   requiredDocuments: z
     .array(z.string())
     .describe("Names of the customs documents strictly required"),
+  complianceNotes: z
+    .array(z.string())
+    .describe("Up to 3 one-sentence notes needing the exporter's attention; empty if none"),
 });
 
 /** "420231", "4202.31.60" or "HS 4202.31" -> "4202.31". Null if fewer than 6 digits. */
@@ -77,6 +94,12 @@ function normalizeDocuments(raw: string[]): string[] {
   return documents;
 }
 
+/** Trimmed, de-duplicated, capped at 3 short sentences. */
+function normalizeNotes(raw: string[]): string[] {
+  const notes = raw.map((note) => note.trim().replace(/\s+/g, " ")).filter((note) => note.length > 0);
+  return [...new Set(notes)].slice(0, 3).map((note) => (note.length > 240 ? `${note.slice(0, 239)}…` : note));
+}
+
 /** Safe-to-log summary of a failure: never the request body or credentials. */
 function describeError(error: unknown): string {
   if (error instanceof Error) {
@@ -88,15 +111,14 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Classifies a product with Gemini, saves it to the active workspace's
- * shipment history and returns the customs data for the UI.
+ * Classifies the declared goods with Gemini, saves the shipment with its full
+ * invoice particulars to the active workspace and returns both for the UI.
  *
  * Returns errors instead of throwing: Next.js redacts thrown Server Action
  * messages in production, and these are meant for the user.
  */
 export async function generateCustomsData(
-  description: string,
-  country: string,
+  values: ShipmentFormValues,
   activeWorkspaceId: string,
 ): Promise<CustomsActionResult> {
   // Server Actions are public endpoints: never spend AI quota on a signed-out caller.
@@ -106,14 +128,19 @@ export async function generateCustomsData(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Sign in to generate customs data." };
 
-  const text = String(description).trim().replace(/\s+/g, " ");
-  if (!text) return { ok: false, error: "Describe your product to generate customs data." };
-  if (text.length > MAX_DESCRIPTION_LENGTH) {
-    return { ok: false, error: `Keep the description under ${MAX_DESCRIPTION_LENGTH} characters.` };
+  // The form validates with the same schema; this is the check that counts.
+  const parsed = shipmentInputSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      reason: "invalid",
+      error: "Some shipment details need fixing.",
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
+    };
   }
-
-  const destination = COUNTRIES.find(({ code }) => code === country);
-  if (!destination) return { ok: false, error: "Choose a supported destination country." };
+  const input = parsed.data;
+  const description = input.description.replace(/\s+/g, " ");
+  const destination = COUNTRIES.find(({ code }) => code === input.country)!;
 
   // The client names the workspace; never trust it. Checked before the AI
   // call so a forged id costs no quota. RLS enforces the same rule on insert.
@@ -122,11 +149,41 @@ export async function generateCustomsData(
     return { ok: false, error: "You don't have access to this workspace. Reload the page and try again." };
   }
 
-  const prompt = `Product: ${JSON.stringify(text)}
-Destination country: ${destination.name}
-Give the most accurate 6-digit HS code, the HS category name (at most 6 words), a realistic import duty percentage for this destination, and the customs documents strictly required (e.g. Commercial Invoice, CN22, Certificate of Origin).`;
+  // The database refuses the shipment without an exporter identity, so stop
+  // here rather than after spending AI quota.
+  const profile = await getCompanyProfile(workspaceId);
+  if (!profile || !isProfileComplete(profile)) {
+    return {
+      ok: false,
+      reason: "profile_incomplete",
+      error: "Add your company details in Settings first. They appear as the exporter on every invoice.",
+    };
+  }
+
+  const incoterm = INCOTERMS.find(({ code }) => code === input.incoterm)!;
+  const total = input.quantity * input.unitPrice;
+  const prompt = `Declared facts (JSON):
+${JSON.stringify(
+  {
+    goods: description,
+    quantity: input.quantity,
+    unitPrice: `${input.unitPrice.toFixed(2)} ${input.currency}`,
+    totalValue: `${total.toFixed(2)} ${input.currency}`,
+    countryOfOrigin: `${regionName(input.originCountry)} (${input.originCountry})`,
+    exporterCountry: `${regionName(profile.countryCode!)} (${profile.countryCode})`,
+    destinationCountry: `${destination.name} (${destination.code})`,
+    incoterm: `${incoterm.code} (${incoterm.name}) ${input.incotermPlace}`,
+    packages: input.packageCount,
+    grossWeightKg: input.grossWeightKg,
+    netWeightKg: input.netWeightKg,
+    transport: "Road",
+  },
+  null,
+  2,
+)}`;
 
   for (const modelId of MODELS) {
+    let data;
     try {
       const { output } = await generateText({
         model: google(modelId),
@@ -152,34 +209,54 @@ Give the most accurate 6-digit HS code, the HS category name (at most 6 words), 
         );
       }
 
-      const data = {
+      data = {
         hsCode,
         hsDescription: normalizeHsDescription(output.hsDescription) || "Description unavailable",
         estimatedDuty,
         requiredDocuments,
         country: destination.code,
+        complianceNotes: normalizeNotes(output.complianceNotes ?? []),
       };
+    } catch (error) {
+      console.error(`[generateCustomsData] ${modelId} failed:`, describeError(error));
+      continue;
+    }
 
-      // Persist before returning. A failed save still returns the result (the
-      // AI quota is already spent) and tells the UI it isn't in the history.
-      const { error: insertError } = await supabase.from("shipments").insert({
+    // Persist before returning. The database adds the exporter snapshot and
+    // the invoice number. A failed save still returns the classification (the
+    // AI quota is spent) but no invoice, since an invoice needs its number.
+    const { data: row, error: insertError } = await supabase
+      .from("shipments")
+      .insert({
         user_id: user.id,
         workspace_id: workspaceId,
-        description: text,
+        description,
         country: data.country,
         hs_code: data.hsCode,
         hs_description: data.hsDescription,
         estimated_duty: data.estimatedDuty,
         documents: data.requiredDocuments,
-      });
-      if (insertError) {
-        console.error("[generateCustomsData] saving shipment failed:", insertError.code, insertError.message);
-      }
+        quantity: input.quantity,
+        unit_price: input.unitPrice,
+        currency: input.currency,
+        incoterm: input.incoterm,
+        incoterm_place: input.incotermPlace,
+        country_of_origin: input.originCountry,
+        package_count: input.packageCount,
+        gross_weight_kg: input.grossWeightKg,
+        net_weight_kg: input.netWeightKg,
+        importer_name: input.consigneeName,
+        importer_address: input.consigneeAddress,
+        importer_tax_id: input.consigneeTaxId || null,
+      })
+      .select(INVOICE_COLUMNS)
+      .single();
 
-      return { ok: true, data, saved: !insertError };
-    } catch (error) {
-      console.error(`[generateCustomsData] ${modelId} failed:`, describeError(error));
+    if (insertError) {
+      console.error("[generateCustomsData] saving shipment failed:", insertError.code, insertError.message);
     }
+
+    return { ok: true, data, invoice: row ? invoiceFromRow(row) : null };
   }
 
   return { ok: false, error: AI_UNAVAILABLE };

@@ -11,6 +11,8 @@ export type ShipmentRow = {
   hs_code: string;
   hs_description: string;
   estimated_duty: string;
+  /** Null for shipments created before invoices carried the legal particulars. */
+  invoice_number: string | null;
 };
 
 export type ShipmentHistory = { status: "ok"; shipments: ShipmentRow[] } | { status: "error" };
@@ -24,7 +26,7 @@ export async function listShipments(workspaceId: string): Promise<ShipmentHistor
 
   const { data, error } = await supabase
     .from("shipments")
-    .select("id, created_at, description, country, hs_code, hs_description, estimated_duty")
+    .select("id, created_at, description, country, hs_code, hs_description, estimated_duty, invoice_number")
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);

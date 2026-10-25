@@ -1,319 +1,337 @@
 import { Document, Font, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import { countryName, type CountryCode } from "@/services/customs/constants";
+import { INCOTERMS, regionName, type InvoiceData, type InvoiceParty } from "@/services/customs/invoice";
+
+// Plex covers Latin Extended (ł, ş, ő, č …), which the built-in Helvetica
+// can't draw, so real company names and addresses print correctly. The
+// server path exists for rendering the template in Node (tests, scripts).
+const FONT_BASE =
+  typeof window === "undefined" ? `${globalThis.process?.cwd?.() ?? ""}/public/fonts` : "/fonts";
+
+Font.register({
+  family: "Plex",
+  fonts: [
+    { src: `${FONT_BASE}/IBMPlexSans-Regular.woff`, fontWeight: 400 },
+    { src: `${FONT_BASE}/IBMPlexSans-SemiBold.woff`, fontWeight: 600 },
+  ],
+});
 
 // Never hyphenate words mid-line: legal documents should wrap whole words only.
 Font.registerHyphenationCallback((word) => [word]);
 
 export type CommercialInvoiceProps = {
-  description: string;
-  country: CountryCode;
-  hsCode: string;
-  hsDescription: string;
-  estimatedDuty: string;
-  issuedAt: Date;
-  /** The workspace logo (a data URI or URL); the text header is used without one. */
+  invoice: InvoiceData;
+  /** The workspace logo (a data URI or URL); the exporter's name is printed without one. */
   logoUrl?: string | null;
 };
 
-type Party = { name: string; lines: string[]; country: string; meta?: string };
-
-// Placeholder parties until business profiles and consignee entry exist.
-// Fictional; the footer says so on every page.
-const EXPORTER: Party = {
-  name: "Sample Exporter Pte. Ltd.",
-  lines: ["1 Placeholder Way, #01-01", "Singapore 018989"],
-  country: "Singapore",
-  meta: "Tax / customs ID: 000000000X",
-};
-
-const CONSIGNEES: Record<CountryCode, Omit<Party, "country">> = {
-  US: { name: "Northwind Imports LLC", lines: ["1200 Example Avenue", "Chicago, IL 60601"] },
-  GB: { name: "Northwind Imports Ltd.", lines: ["10 Example Street", "London EC1A 1AA"] },
-  DE: { name: "Northwind Importe GmbH", lines: ["Beispielstrasse 12", "10115 Berlin"] },
-  CA: { name: "Northwind Imports Inc.", lines: ["88 Example Road", "Toronto, ON M5V 2T6"] },
-};
-
-const INVOICE_NUMBER = "INV-000001";
-const QUANTITY = 1;
-const UNIT_VALUE = 100;
-
 const INK = "#0f172a";
-const MUTED = "#64748b";
-const RULE = "#cbd5e1";
-const TINT = "#f8fafc";
+const MUTED = "#475569";
+const RULE = "#0f172a";
+const HAIRLINE = "#94a3b8";
+const TINT = "#f1f5f9";
+const BORDER = 0.75;
 
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 44,
-    paddingBottom: 72,
-    paddingHorizontal: 44,
-    fontFamily: "Helvetica",
-    fontSize: 9.5,
+    paddingTop: 34,
+    paddingBottom: 56,
+    paddingHorizontal: 36,
+    fontFamily: "Plex",
+    fontSize: 8.5,
     color: INK,
-    // No page-level lineHeight: in react-pdf it hides the `fixed` footer.
   },
+
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingBottom: 18,
-    borderBottomWidth: 2,
-    borderBottomColor: INK,
+    alignItems: "flex-end",
+    paddingBottom: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: RULE,
   },
-  title: { fontFamily: "Helvetica-Bold", fontSize: 22, letterSpacing: -0.4 },
-  titleSub: { marginTop: 4, fontSize: 9, color: MUTED },
-  brand: { alignItems: "flex-end" },
-  brandName: { fontFamily: "Helvetica-Bold", fontSize: 15, letterSpacing: -0.3 },
-  // A box the logo scales down into, whatever its aspect ratio.
-  brandLogo: { maxWidth: 150, maxHeight: 44, objectFit: "contain" },
-  sampleTag: {
-    marginTop: 6,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderWidth: 1,
-    borderColor: INK,
-    fontFamily: "Helvetica-Bold",
-    fontSize: 7,
-    letterSpacing: 1,
-  },
+  title: { fontWeight: 600, fontSize: 17, letterSpacing: 1.6 },
+  subtitle: { marginTop: 2, fontSize: 8, color: MUTED, letterSpacing: 0.3 },
+  brandLogo: { maxWidth: 160, maxHeight: 46, objectFit: "contain" },
+  brandName: { maxWidth: 240, fontWeight: 600, fontSize: 12, textAlign: "right" },
 
-  parties: { flexDirection: "row", marginTop: 18 },
-  partyBox: { flex: 1, padding: 11, borderWidth: 1, borderColor: RULE },
-  partyBoxGap: { marginRight: 12 },
-  label: {
-    fontFamily: "Helvetica-Bold",
-    fontSize: 7,
-    letterSpacing: 1,
-    color: MUTED,
-    textTransform: "uppercase",
-  },
-  partyName: { marginTop: 5, fontFamily: "Helvetica-Bold", fontSize: 10.5 },
-  partyMeta: { marginTop: 5, color: MUTED },
+  // Form grid: every box shares hairline borders like a customs form.
+  grid: { flexDirection: "row", marginTop: 12, borderWidth: BORDER, borderColor: RULE },
+  gridLeft: { width: "54%", borderRightWidth: BORDER, borderRightColor: RULE },
+  gridRight: { width: "46%" },
+  partyBox: { flexGrow: 1, padding: 7 },
+  partyBoxDivider: { borderBottomWidth: BORDER, borderBottomColor: RULE },
+  cellRow: { flexDirection: "row", flexGrow: 1, borderBottomWidth: BORDER, borderBottomColor: RULE },
+  cellRowLast: { flexDirection: "row", flexGrow: 1 },
+  cell: { flex: 1, padding: 7 },
+  cellDivider: { borderRightWidth: BORDER, borderRightColor: RULE },
 
-  metaGrid: { flexDirection: "row", marginTop: 12, borderWidth: 1, borderColor: RULE },
-  metaCell: { flex: 1, padding: 9 },
-  metaCellDivider: { borderRightWidth: 1, borderRightColor: RULE },
-  metaValue: { marginTop: 4, fontFamily: "Helvetica-Bold", fontSize: 10 },
+  label: { fontSize: 6.5, color: MUTED, letterSpacing: 0.4, textTransform: "uppercase" },
+  boxNumber: { fontWeight: 600, color: INK },
+  value: { marginTop: 3, fontWeight: 600, fontSize: 9 },
+  valueNote: { marginTop: 1, fontSize: 7.5, color: MUTED },
+  partyName: { marginTop: 4, fontWeight: 600, fontSize: 9.5 },
+  partyLine: { marginTop: 1 },
+  partyIds: { marginTop: 5, flexDirection: "row", flexWrap: "wrap" },
+  partyId: { marginRight: 12, marginTop: 1 },
+  partyIdLabel: { color: MUTED },
 
-  table: { marginTop: 18, borderWidth: 1, borderColor: RULE },
-  tableHead: { flexDirection: "row", backgroundColor: INK },
-  tableHeadText: {
-    fontFamily: "Helvetica-Bold",
-    fontSize: 7,
-    letterSpacing: 0.9,
-    color: "#ffffff",
-    textTransform: "uppercase",
-  },
-  tableRow: { flexDirection: "row", backgroundColor: TINT },
-  cell: { paddingVertical: 9, paddingHorizontal: 9 },
-  colDescription: { flex: 4 },
-  colHs: { flex: 1.6 },
-  colOrigin: { flex: 1.5 },
-  colQty: { flex: 0.7, textAlign: "right" },
-  colUnit: { flex: 1.3, textAlign: "right" },
-  colTotal: { flex: 1.3, textAlign: "right" },
-  mono: { fontFamily: "Courier-Bold", fontSize: 9.5 },
-  cellSub: { marginTop: 3, fontSize: 7.5, color: MUTED },
-
-  totals: { marginTop: 14, alignItems: "flex-end" },
-  totalsBox: { width: 230, borderWidth: 1, borderColor: RULE },
-  totalsRowFirst: {
+  table: { marginTop: 12, borderWidth: BORDER, borderColor: RULE },
+  tableHead: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: INK,
-    color: "#ffffff",
+    backgroundColor: TINT,
+    borderBottomWidth: BORDER,
+    borderBottomColor: RULE,
   },
-  totalsRowLast: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-  },
-  strong: { fontFamily: "Helvetica-Bold" },
-  totalsNote: { width: 230, marginTop: 6, fontSize: 7.5, color: MUTED, textAlign: "right" },
+  th: { paddingVertical: 5, paddingHorizontal: 5, fontSize: 6.5, color: MUTED, letterSpacing: 0.3, textTransform: "uppercase" },
+  tr: { flexDirection: "row" },
+  td: { paddingVertical: 6, paddingHorizontal: 5 },
+  colDivider: { borderRightWidth: BORDER, borderRightColor: HAIRLINE },
+  colNo: { width: 24, textAlign: "center" },
+  colDescription: { flex: 1 },
+  colHs: { width: 58 },
+  colOrigin: { width: 38, textAlign: "center" },
+  colQty: { width: 50, textAlign: "right" },
+  colNet: { width: 52, textAlign: "right" },
+  colUnit: { width: 62, textAlign: "right" },
+  colAmount: { width: 72, textAlign: "right" },
+  strong: { fontWeight: 600 },
 
-  declaration: { marginTop: 26 },
-  declarationText: { marginTop: 5 },
-  signatureRow: { flexDirection: "row", marginTop: 28 },
-  signatureField: { flex: 1, marginRight: 24 },
-  signatureFieldLast: { flex: 1 },
-  signatureLine: { height: 22, borderBottomWidth: 1, borderBottomColor: INK },
-  signatureLabel: { marginTop: 4, fontSize: 7.5, color: MUTED },
+  totals: {
+    flexDirection: "row",
+    borderTopWidth: BORDER,
+    borderTopColor: RULE,
+  },
+  totalsLabel: { flex: 1, paddingVertical: 6, paddingHorizontal: 5, textAlign: "right" },
+  totalsValue: { width: 72, paddingVertical: 6, paddingHorizontal: 5, textAlign: "right", fontWeight: 600 },
+  totalsNote: { marginTop: 4, fontSize: 7.5, color: MUTED, textAlign: "right" },
+
+  declaration: { marginTop: 14, borderWidth: BORDER, borderColor: RULE },
+  declarationBody: { padding: 7 },
+  declarationText: { marginTop: 4, fontSize: 8.5, lineHeight: 1.45 },
+  signRow: { flexDirection: "row", borderTopWidth: BORDER, borderTopColor: RULE },
+  signCell: { flex: 1, padding: 7, minHeight: 58, justifyContent: "space-between" },
+  signValue: { fontWeight: 600, fontSize: 9 },
+  signLine: { borderBottomWidth: 0.5, borderBottomColor: HAIRLINE, height: 18 },
+  stampCell: { width: 120, padding: 7, minHeight: 58 },
 
   footer: {
     position: "absolute",
-    left: 44,
-    right: 44,
+    left: 36,
+    right: 36,
     bottom: 24,
     flexDirection: "row",
-    alignItems: "flex-start",
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: RULE,
-    fontSize: 7.5,
+    justifyContent: "space-between",
+    paddingTop: 6,
+    borderTopWidth: 0.5,
+    borderTopColor: HAIRLINE,
+    fontSize: 7,
     color: MUTED,
   },
-  footerText: { flex: 1, marginRight: 16 },
-  footerStrong: { fontFamily: "Helvetica-Bold", color: INK },
 });
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+const money = new Intl.NumberFormat("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const kilograms = new Intl.NumberFormat("en-GB", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const integer = new Intl.NumberFormat("en-GB");
+
+// Unambiguous across locales ("25 October 2026"), and pinned to UTC like the record.
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
-function usd(amount: number) {
-  return `$${amount.toFixed(2)}`;
+function country(code: string) {
+  return `${regionName(code)} (${code})`;
 }
 
-function PartyBlock({ label, party, gap }: { label: string; party: Party; gap?: boolean }) {
+function Label({ n, children }: { n?: number; children: string }) {
   return (
-    <View style={gap ? [styles.partyBox, styles.partyBoxGap] : styles.partyBox}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.partyName}>{party.name}</Text>
-      {party.lines.map((line) => (
-        <Text key={line}>{line}</Text>
-      ))}
-      <Text>{party.country}</Text>
-      {party.meta ? <Text style={styles.partyMeta}>{party.meta}</Text> : null}
+    <Text style={styles.label}>
+      {n !== undefined && <Text style={styles.boxNumber}>{n} </Text>}
+      {children}
+    </Text>
+  );
+}
+
+function Cell({
+  n,
+  label,
+  value,
+  note,
+  divider,
+}: {
+  n: number;
+  label: string;
+  value: string;
+  note?: string;
+  divider?: boolean;
+}) {
+  return (
+    <View style={divider ? [styles.cell, styles.cellDivider] : styles.cell}>
+      <Label n={n}>{label}</Label>
+      <Text style={styles.value}>{value}</Text>
+      {note ? <Text style={styles.valueNote}>{note}</Text> : null}
     </View>
   );
 }
 
-export function CommercialInvoice({
-  description,
-  country,
-  hsCode,
-  hsDescription,
-  estimatedDuty,
-  issuedAt,
-  logoUrl,
-}: CommercialInvoiceProps) {
-  const destination = countryName(country);
-  const consignee: Party = { ...CONSIGNEES[country], country: destination };
-  const total = QUANTITY * UNIT_VALUE;
-  const rate = Number.parseFloat(estimatedDuty);
-  const dutyAmount = Number.isFinite(rate) ? (total * rate) / 100 : 0;
+function Party({ n, label, party, divider }: { n: number; label: string; party: InvoiceParty; divider?: boolean }) {
+  return (
+    <View style={divider ? [styles.partyBox, styles.partyBoxDivider] : styles.partyBox}>
+      <Label n={n}>{label}</Label>
+      <Text style={styles.partyName}>{party.name}</Text>
+      {party.address.split("\n").map((line, i) => (
+        <Text key={i} style={styles.partyLine}>
+          {line}
+        </Text>
+      ))}
+      <Text style={styles.partyLine}>{country(party.country)}</Text>
+      <View style={styles.partyIds}>
+        <Text style={styles.partyId}>
+          <Text style={styles.partyIdLabel}>EORI </Text>
+          {party.eori ?? "—"}
+        </Text>
+        <Text style={styles.partyId}>
+          <Text style={styles.partyIdLabel}>VAT / Tax ID </Text>
+          {party.taxId ?? "—"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** A commercial invoice laid out as a customs form: numbered boxes, one line per HS code. */
+export function CommercialInvoice({ invoice, logoUrl }: CommercialInvoiceProps) {
+  const { line, currency } = invoice;
+  const total = line.quantity * line.unitPrice;
+  const incoterm = INCOTERMS.find(({ code }) => code === invoice.incoterm);
+  const terms = `${invoice.incoterm} ${invoice.incotermPlace}`;
+  const issued = formatDate(invoice.issuedAt);
 
   return (
     <Document
-      title={`Commercial Invoice ${INVOICE_NUMBER}`}
-      author="Bordr"
+      title={`Commercial Invoice ${invoice.invoiceNumber}`}
+      author={invoice.exporter.name}
       subject="Commercial Invoice"
     >
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Commercial Invoice</Text>
-            <Text style={styles.titleSub}>For international customs clearance</Text>
+            <Text style={styles.title}>COMMERCIAL INVOICE</Text>
+            <Text style={styles.subtitle}>For customs clearance · International road freight</Text>
           </View>
-          <View style={styles.brand}>
-            {logoUrl ? (
-              // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop
-              <Image src={logoUrl} style={styles.brandLogo} />
-            ) : (
-              <Text style={styles.brandName}>Bordr</Text>
-            )}
-            <Text style={styles.sampleTag}>SAMPLE DATA</Text>
-          </View>
+          {logoUrl ? (
+            // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop
+            <Image src={logoUrl} style={styles.brandLogo} />
+          ) : (
+            <Text style={styles.brandName}>{invoice.exporter.name}</Text>
+          )}
         </View>
 
-        <View style={styles.parties}>
-          <PartyBlock label="Exporter / Sender" party={EXPORTER} gap />
-          <PartyBlock label="Consignee / Receiver" party={consignee} />
-        </View>
+        <View style={styles.grid}>
+          <View style={styles.gridLeft}>
+            <Party n={1} label="Exporter / Seller" party={invoice.exporter} divider />
+            <Party n={2} label="Consignee / Buyer" party={invoice.consignee} />
+          </View>
 
-        <View style={styles.metaGrid}>
-          <View style={[styles.metaCell, styles.metaCellDivider]}>
-            <Text style={styles.label}>Invoice Number</Text>
-            <Text style={styles.metaValue}>{INVOICE_NUMBER}</Text>
-          </View>
-          <View style={[styles.metaCell, styles.metaCellDivider]}>
-            <Text style={styles.label}>Date</Text>
-            <Text style={styles.metaValue}>{formatDate(issuedAt)}</Text>
-          </View>
-          <View style={[styles.metaCell, styles.metaCellDivider]}>
-            <Text style={styles.label}>Country of Origin</Text>
-            <Text style={styles.metaValue}>{EXPORTER.country}</Text>
-          </View>
-          <View style={styles.metaCell}>
-            <Text style={styles.label}>Destination</Text>
-            <Text style={styles.metaValue}>{destination}</Text>
+          <View style={styles.gridRight}>
+            <View style={styles.cellRow}>
+              <Cell n={3} label="Invoice number" value={invoice.invoiceNumber} divider />
+              <Cell n={4} label="Invoice date" value={issued} />
+            </View>
+            <View style={styles.cellRow}>
+              <Cell n={5} label="Incoterms® 2020" value={terms} note={incoterm?.name} />
+            </View>
+            <View style={styles.cellRow}>
+              <Cell n={6} label="Country of origin" value={country(invoice.originCountry)} divider />
+              <Cell n={7} label="Country of destination" value={country(invoice.destination)} />
+            </View>
+            <View style={styles.cellRow}>
+              <Cell n={8} label="Currency" value={currency} divider />
+              <Cell n={9} label="Mode of transport" value="Road" />
+            </View>
+            <View style={styles.cellRow}>
+              <Cell n={10} label="Packages" value={integer.format(invoice.packageCount)} divider />
+              <Cell n={11} label="Gross weight" value={`${kilograms.format(invoice.grossWeightKg)} kg`} />
+            </View>
+            <View style={styles.cellRowLast}>
+              <Cell n={12} label="Net weight" value={`${kilograms.format(invoice.netWeightKg)} kg`} />
+            </View>
           </View>
         </View>
 
         <View style={styles.table}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colDescription]}>
-              Product Description
-            </Text>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colHs]}>HS Code</Text>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colOrigin]}>Origin</Text>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colQty]}>Qty</Text>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colUnit]}>Unit Value</Text>
-            <Text style={[styles.cell, styles.tableHeadText, styles.colTotal]}>Total</Text>
+          <View style={styles.tableHead} fixed>
+            <Text style={[styles.th, styles.colNo, styles.colDivider]}>No.</Text>
+            <Text style={[styles.th, styles.colDescription, styles.colDivider]}>Description of goods</Text>
+            <Text style={[styles.th, styles.colHs, styles.colDivider]}>HS code</Text>
+            <Text style={[styles.th, styles.colOrigin, styles.colDivider]}>Origin</Text>
+            <Text style={[styles.th, styles.colQty, styles.colDivider]}>Quantity</Text>
+            <Text style={[styles.th, styles.colNet, styles.colDivider]}>Net kg</Text>
+            <Text style={[styles.th, styles.colUnit, styles.colDivider]}>Unit price</Text>
+            <Text style={[styles.th, styles.colAmount]}>Amount {currency}</Text>
           </View>
-          <View style={styles.tableRow} wrap={false}>
-            <Text style={[styles.cell, styles.colDescription]}>{description}</Text>
-            <View style={[styles.cell, styles.colHs]}>
-              <Text style={styles.mono}>{hsCode}</Text>
-              <Text style={styles.cellSub}>{hsDescription}</Text>
-            </View>
-            <Text style={[styles.cell, styles.colOrigin]}>{EXPORTER.country}</Text>
-            <Text style={[styles.cell, styles.colQty]}>{QUANTITY}</Text>
-            <Text style={[styles.cell, styles.colUnit]}>{usd(UNIT_VALUE)}</Text>
-            <Text style={[styles.cell, styles.colTotal, styles.strong]}>{usd(total)}</Text>
-          </View>
-        </View>
 
-        <View style={styles.totals}>
-          <View style={styles.totalsBox}>
-            <View style={styles.totalsRowFirst}>
-              <Text style={styles.strong}>Invoice Total (USD)</Text>
-              <Text style={styles.strong}>{usd(total)}</Text>
-            </View>
-            <View style={styles.totalsRowLast}>
-              <Text>Estimated Duty ({estimatedDuty})</Text>
-              <Text style={styles.strong}>{usd(dutyAmount)}</Text>
-            </View>
+          <View style={styles.tr} wrap={false}>
+            <Text style={[styles.td, styles.colNo, styles.colDivider]}>1</Text>
+            <Text style={[styles.td, styles.colDescription, styles.colDivider]}>{line.description}</Text>
+            <Text style={[styles.td, styles.colHs, styles.colDivider, styles.strong]}>{line.hsCode}</Text>
+            <Text style={[styles.td, styles.colOrigin, styles.colDivider]}>{invoice.originCountry}</Text>
+            <Text style={[styles.td, styles.colQty, styles.colDivider]}>{integer.format(line.quantity)} pcs</Text>
+            <Text style={[styles.td, styles.colNet, styles.colDivider]}>{kilograms.format(invoice.netWeightKg)}</Text>
+            <Text style={[styles.td, styles.colUnit, styles.colDivider]}>{money.format(line.unitPrice)}</Text>
+            <Text style={[styles.td, styles.colAmount, styles.strong]}>{money.format(total)}</Text>
           </View>
-          <Text style={styles.totalsNote}>
-            Duty is an estimate on the declared value and is not a final assessment.
-          </Text>
+
+          <View style={styles.totals} wrap={false}>
+            <Text style={[styles.totalsLabel, styles.strong]}>Total invoice value ({currency})</Text>
+            <Text style={styles.totalsValue}>{money.format(total)}</Text>
+          </View>
         </View>
+        <Text style={styles.totalsNote}>
+          Prices are stated on {terms} terms (Incoterms® 2020).
+        </Text>
 
         <View style={styles.declaration} wrap={false}>
-          <Text style={styles.label}>Declaration</Text>
-          <Text style={styles.declarationText}>
-            I declare that the information on this invoice is true and correct and that the
-            goods described are of the stated origin.
-          </Text>
-          <View style={styles.signatureRow}>
-            <View style={styles.signatureField}>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>Authorised signature</Text>
+          <View style={styles.declarationBody}>
+            <Label n={13}>Declaration</Label>
+            <Text style={styles.declarationText}>
+              We hereby certify that this invoice shows the actual price of the goods described, that
+              all particulars shown are true and correct, and that the country of origin of the goods
+              is {regionName(invoice.originCountry)}.
+            </Text>
+          </View>
+          <View style={styles.signRow}>
+            <View style={[styles.signCell, styles.cellDivider]}>
+              <Label>Name and title of signatory</Label>
+              <Text style={styles.signValue}>
+                {invoice.signatory.name}
+                {invoice.signatory.title ? `, ${invoice.signatory.title}` : ""}
+              </Text>
             </View>
-            <View style={styles.signatureField}>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>Name and title</Text>
+            <View style={[styles.signCell, styles.cellDivider]}>
+              <Label>Place and date</Label>
+              <Text style={styles.signValue}>{issued}</Text>
             </View>
-            <View style={styles.signatureFieldLast}>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>Date</Text>
+            <View style={[styles.signCell, styles.cellDivider]}>
+              <Label>Signature</Label>
+              <View style={styles.signLine} />
+            </View>
+            <View style={styles.stampCell}>
+              <Label>Company stamp</Label>
             </View>
           </View>
         </View>
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>
-            <Text style={styles.footerStrong}>Placeholder data. </Text>
-            The exporter, consignee, invoice number, quantity, declared value and origin on this
-            invoice are fictional sample values, not your shipment details. The HS code and duty
-            are AI-generated estimates. Replace and verify every field before filing.
+          <Text>
+            {invoice.invoiceNumber} · {invoice.exporter.name}
           </Text>
-          <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
         </View>
       </Page>
     </Document>

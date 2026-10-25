@@ -1,21 +1,32 @@
+import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { CircleAlert, FileText } from "lucide-react";
+import { ArrowRight, CircleAlert, FileText, TriangleAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 import { countryName, type CountryCode, type CustomsResult } from "@/services/customs/constants";
+import type { InvoiceData, ShipmentFormValues } from "@/services/customs/invoice";
 
 import { InvoiceDownload } from "./InvoiceDownload";
 
 export type Outcome =
   | { status: "idle" }
   | { status: "pending"; country: CountryCode }
-  | { status: "success"; data: CustomsResult; description: string; saved: boolean; logo: string | null }
-  | { status: "error"; message: string };
+  | {
+      status: "success";
+      data: CustomsResult;
+      /** Null when the shipment couldn't be saved; an invoice needs its saved number. */
+      invoice: InvoiceData | null;
+      logo: string | null;
+      /** The values this result was generated from, to detect later edits. */
+      submitted: ShipmentFormValues;
+    }
+  | { status: "error"; message: string; settingsLink?: boolean };
 
 const LABELS = {
   hs: "Suggested HS code",
   duty: "Estimated import duty",
   docs: "Required documents",
+  notes: "Compliance notes",
 } as const;
 
 const ROWS = "divide-y divide-hairline";
@@ -93,6 +104,19 @@ function ResultRows({ result }: { result: CustomsResult }) {
           ))}
         </ul>
       </Row>
+
+      {result.complianceNotes.length > 0 && (
+        <Row label={LABELS.notes} index={3} animate>
+          <ul className="grid gap-2">
+            {result.complianceNotes.map((note) => (
+              <li key={note} className="flex gap-2 text-sm">
+                <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-muted" />
+                {note}
+              </li>
+            ))}
+          </ul>
+        </Row>
+      )}
     </dl>
   );
 }
@@ -180,8 +204,8 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
         {outcome.status === "idle" && (
           <>
             <p className="mb-6 text-sm text-ink-muted">
-              Describe a product and choose a destination. Its HS code, duty estimate and required
-              documents will appear here.
+              Fill in the shipment details. The HS code, duty estimate, required documents and the
+              commercial invoice will appear here.
             </p>
             <IdleRows />
           </>
@@ -211,6 +235,15 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
             <div>
               <p className="font-medium text-danger">Couldn&apos;t generate customs data</p>
               <p className="mt-1 text-danger">{outcome.message}</p>
+              {outcome.settingsLink && (
+                <Link
+                  href="/settings"
+                  className="mt-2 inline-flex items-center gap-1 font-medium text-danger underline-offset-2 hover:underline"
+                >
+                  Open company profile
+                  <ArrowRight aria-hidden className="size-3.5" />
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -219,17 +252,24 @@ export function CustomsResults({ outcome, stale }: { outcome: Outcome; stale: bo
       {outcome.status === "success" && (
         <div className="flex flex-col gap-3 border-t border-hairline bg-ground px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
           <div className="grid gap-1 text-[13px]">
-            <p className="text-ink-muted">
-              The invoice uses placeholder party details. Verify every field before filing.
-            </p>
-            {!outcome.saved && (
+            {outcome.invoice ? (
+              <>
+                <p className="font-medium text-ink">
+                  Invoice <span className="tabular-nums">{outcome.invoice.invoiceNumber}</span> saved to your
+                  history
+                </p>
+                <p className="text-ink-muted">
+                  You sign it as the exporter. Check every figure before the goods travel.
+                </p>
+              </>
+            ) : (
               <p className="flex items-center gap-1.5 text-danger">
                 <CircleAlert aria-hidden className="size-3.5 shrink-0" />
-                Not saved to your shipment history. Generate again to retry.
+                Not saved, so no invoice was issued. Generate again to retry.
               </p>
             )}
           </div>
-          <InvoiceDownload description={outcome.description} result={outcome.data} logo={outcome.logo} />
+          {outcome.invoice && <InvoiceDownload invoice={outcome.invoice} logo={outcome.logo} />}
         </div>
       )}
     </section>

@@ -5,7 +5,10 @@ import { cookies } from "next/headers";
 
 import { createServerClient } from "@/lib/supabase/server";
 
+import { z } from "zod";
+
 import { LOGO_BUCKET, MAX_LOGO_BYTES, logoObjectPath } from "./constants";
+import { companyProfileSchema } from "./profile";
 import { ACTIVE_WORKSPACE_COOKIE, getWorkspaceRole, isWorkspaceMember } from "./queries";
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
@@ -131,6 +134,53 @@ export async function uploadWorkspaceLogo(formData: FormData): Promise<LogoActio
 
   refresh();
   return { ok: true };
+}
+
+export type ProfileActionState =
+  | { status: "idle" }
+  | { status: "saved" }
+  | { status: "invalid"; fieldErrors: Partial<Record<string, string[]>> }
+  | { status: "error"; error: string };
+
+/** Saves the company profile printed as the exporter on this workspace's invoices. */
+export async function updateCompanyProfile(
+  _previous: ProfileActionState,
+  formData: FormData,
+): Promise<ProfileActionState> {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const parsed = companyProfileSchema.safeParse(
+    Object.fromEntries(Object.keys(companyProfileSchema.shape).map((key) => [key, String(formData.get(key) ?? "")])),
+  );
+  if (!parsed.success) return { status: "invalid", fieldErrors: z.flattenError(parsed.error).fieldErrors };
+
+  const supabase = await authorizeOwner(workspaceId);
+  if (!supabase) return { status: "error", error: "Only workspace owners can change the company profile." };
+
+  const profile = parsed.data;
+  const { data, error } = await supabase
+    .from("workspaces")
+    .update({
+      legal_name: profile.legalName,
+      address_line1: profile.addressLine1,
+      address_line2: profile.addressLine2,
+      postal_code: profile.postalCode,
+      city: profile.city,
+      country_code: profile.countryCode,
+      eori_number: profile.eoriNumber,
+      tax_id: profile.taxId,
+      signatory_name: profile.signatoryName,
+      signatory_title: profile.signatoryTitle,
+    })
+    .eq("id", workspaceId)
+    .select("id");
+
+  if (error || !data?.length) {
+    console.error("[updateCompanyProfile] update failed:", error?.code, error?.message ?? "no row updated");
+    return { status: "error", error: "Couldn't save the company profile. Try again." };
+  }
+
+  refresh();
+  return { status: "saved" };
 }
 
 /** Clears the workspace logo; invoices fall back to the text header. */

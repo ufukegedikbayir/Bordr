@@ -3,6 +3,8 @@ import { cache } from "react";
 
 import { createServerClient } from "@/lib/supabase/server";
 
+import { PROFILE_COLUMNS, profileFromRow, type CompanyProfile, type ProfileRow } from "./profile";
+
 /** Remembers the selected workspace across reloads. Always re-checked against membership. */
 export const ACTIVE_WORKSPACE_COOKIE = "bordr-workspace";
 
@@ -74,6 +76,22 @@ export async function getActiveWorkspace(): Promise<Workspace | null> {
   const result = await getUserWorkspaces();
   return result.status === "ok" ? result.active : null;
 }
+
+/** The workspace's company profile, or null if it can't be read. RLS limits it to members. */
+export const getCompanyProfile = cache(async (workspaceId: string): Promise<CompanyProfile | null> => {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select(PROFILE_COLUMNS)
+    .eq("id", workspaceId)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.error("[getCompanyProfile] query failed:", error.code, error.message);
+    return null;
+  }
+  return profileFromRow(data as ProfileRow);
+});
 
 /** `userId`'s role in `workspaceId`, or null if they aren't a member. For authorizing writes. */
 export async function getWorkspaceRole(
