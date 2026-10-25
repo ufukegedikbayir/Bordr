@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 
 import { generateCustomsData } from "@/services/customs/actions";
@@ -14,7 +14,6 @@ import { loadInvoiceLogo } from "./invoice-logo";
 import { ShipmentForm, fieldId, type FieldErrors, type FieldKey } from "./shipment-form";
 
 const UNEXPECTED_ERROR = "Something went wrong while analyzing your product. Try again.";
-const NO_WORKSPACE = "Your workspace couldn't be loaded. Reload the page and try again.";
 
 // In form order. Origin and Incoterm start blank on purpose: they're
 // declarations the exporter must make, not defaults to click past.
@@ -47,14 +46,8 @@ function sameValues(a: ShipmentFormValues, b: ShipmentFormValues) {
   return FIELD_ORDER.every((key) => a[key].trim() === b[key].trim());
 }
 
-export function NewShipment({
-  activeWorkspace,
-  notice,
-}: {
-  activeWorkspace: Promise<Workspace | null>;
-  /** Streamed in by the page, e.g. a prompt to complete the company profile. */
-  notice?: ReactNode;
-}) {
+/** Rendered only once the page has confirmed the workspace can issue invoices. */
+export function NewShipment({ workspace }: { workspace: Workspace }) {
   const [values, setValues] = useState<ShipmentFormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [outcome, setOutcome] = useState<Outcome>({ status: "idle" });
@@ -93,11 +86,11 @@ export function NewShipment({
     preloadInvoice();
 
     try {
-      const workspace = await activeWorkspace;
       // The logo loads alongside the AI call, so it adds no wait.
-      const [result, logo] = workspace
-        ? await Promise.all([generateCustomsData(submitted, workspace.id), loadInvoiceLogo(workspace.logoUrl)])
-        : [{ ok: false, error: NO_WORKSPACE } as const, null];
+      const [result, logo] = await Promise.all([
+        generateCustomsData(submitted, workspace.id),
+        loadInvoiceLogo(workspace.logoUrl),
+      ]);
 
       if (result.ok) {
         setOutcome({ status: "success", data: result.data, invoice: result.invoice, logo, submitted });
@@ -114,28 +107,16 @@ export function NewShipment({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl">
-      <header className="mb-8">
-        <h1 className="text-xl font-semibold tracking-[-0.015em] sm:text-2xl">New shipment</h1>
-        <p className="mt-1.5 max-w-2xl text-sm text-ink-muted">
-          Declare the goods and delivery terms. Bordr classifies them, estimates import duty and
-          issues a commercial invoice in your company&apos;s name.
-        </p>
-      </header>
-
-      {notice}
-
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        <ShipmentForm
-          values={values}
-          errors={errors}
-          pending={pending}
-          textareaRef={textareaRef}
-          onChange={updateField}
-          onSubmit={handleSubmit}
-        />
-        <CustomsResults outcome={outcome} stale={stale} />
-      </div>
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <ShipmentForm
+        values={values}
+        errors={errors}
+        pending={pending}
+        textareaRef={textareaRef}
+        onChange={updateField}
+        onSubmit={handleSubmit}
+      />
+      <CustomsResults outcome={outcome} stale={stale} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { createServerClient as createSupabaseServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 
 import { getSupabaseEnv } from "./env";
 
@@ -9,6 +10,9 @@ export async function createServerClient() {
   // Await cookies() first: it opts the route into dynamic rendering, so the
   // build never prerenders (and never needs env vars for) authed pages.
   const cookieStore = await cookies();
+  // Supabase auth reads the clock (token expiry). Cookies alone are allowed in
+  // a runtime prefetch, the clock isn't, so wait for the actual request.
+  await connection();
   const { url, anonKey } = getSupabaseEnv();
 
   return createSupabaseServerClient(url, anonKey, {
