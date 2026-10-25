@@ -142,12 +142,15 @@ export type ProfileActionState =
   | { status: "invalid"; fieldErrors: Partial<Record<string, string[]>> }
   | { status: "error"; error: string };
 
-/** Saves the company profile printed as the exporter on this workspace's invoices. */
-export async function updateCompanyProfile(
-  _previous: ProfileActionState,
+/**
+ * Saves the legal profile printed as the exporter on this workspace's invoices.
+ * The id comes from the client, so ownership is re-checked here (and by RLS).
+ */
+export async function updateWorkspaceProfile(
+  activeWorkspaceId: string,
   formData: FormData,
 ): Promise<ProfileActionState> {
-  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const workspaceId = String(activeWorkspaceId);
   const parsed = companyProfileSchema.safeParse(
     Object.fromEntries(Object.keys(companyProfileSchema.shape).map((key) => [key, String(formData.get(key) ?? "")])),
   );
@@ -175,7 +178,7 @@ export async function updateCompanyProfile(
     .select("id");
 
   if (error || !data?.length) {
-    console.error("[updateCompanyProfile] update failed:", error?.code, error?.message ?? "no row updated");
+    console.error("[updateWorkspaceProfile] update failed:", error?.code, error?.message ?? "no row updated");
     return { status: "error", error: "Couldn't save the company profile. Try again." };
   }
 

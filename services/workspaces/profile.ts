@@ -48,17 +48,19 @@ export function profileFromRow(row: ProfileRow): CompanyProfile {
   };
 }
 
-/** Mirrors the check in the database's shipment trigger. */
+/**
+ * What the database's shipment trigger requires, as labels for the UI.
+ * Keep in step with `private.stamp_shipment_invoice`.
+ */
+export const PROFILE_REQUIREMENTS: ReadonlyArray<{ label: string; met: (p: CompanyProfile) => boolean }> = [
+  { label: "Registered company name", met: (p) => Boolean(p.legalName) },
+  { label: "Registered address", met: (p) => Boolean(p.addressLine1 && p.postalCode && p.city && p.countryCode) },
+  { label: "EORI number or VAT / Tax ID", met: (p) => Boolean(p.eoriNumber || p.taxId) },
+  { label: "Authorised signatory", met: (p) => Boolean(p.signatoryName) },
+];
+
 export function isProfileComplete(profile: CompanyProfile): boolean {
-  return Boolean(
-    profile.legalName &&
-      profile.addressLine1 &&
-      profile.postalCode &&
-      profile.city &&
-      profile.countryCode &&
-      profile.signatoryName &&
-      (profile.eoriNumber || profile.taxId),
-  );
+  return PROFILE_REQUIREMENTS.every(({ met }) => met(profile));
 }
 
 const required = (what: string, max: number) =>
