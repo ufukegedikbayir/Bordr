@@ -100,6 +100,16 @@ const STRICT_TAX_ID = /^[A-Z0-9]+(?:[ ./-][A-Z0-9]+)*$/;
 
 const SYMBOLS = "Use letters, numbers and normal punctuation only, no emoji or symbols.";
 
+// The database's private.is_clean_text() deny-list. A few of these count as
+// letters or digits in Unicode (①, ℓ), so the patterns above alone would let
+// them through to a constraint error.
+const DENIED = /[\u00A9\u00AE\u200B-\u200F\u2060-\u206F\u20A0-\u20CF\u2100-\u214F\u2190-\u2BFF\uE000-\uF8FF\uFE00-\uFE0F\u{1F000}-\u{1FAFF}\u{E0000}-\u{E007F}]/u;
+const clean = (v: string) => !DENIED.test(v);
+
+// The examples shown in the form. Saved as-is they'd print a fake identity.
+const EXAMPLE_EORI = "DE123456789012345";
+const EXAMPLE_TAX_ID = "DE123456789";
+
 type Rule = { pattern: RegExp; message: string };
 
 /** Trims and collapses spaces, then checks length and characters. */
@@ -113,6 +123,7 @@ const text = (what: string, max: number, rule: Rule, min = 1) =>
         .min(1, `Enter ${what}.`)
         .min(min, `That ${what} is too short.`)
         .regex(rule.pattern, rule.message)
+        .refine(clean, rule.message)
         .max(max, `Use at most ${max} characters.`),
     );
 
@@ -124,7 +135,7 @@ const optional = (max: number, rule: Rule, normalize: (v: string) => string = co
     .pipe(
       z.union([
         z.literal(""),
-        z.string().regex(rule.pattern, rule.message).max(max, `Use at most ${max} characters.`),
+        z.string().regex(rule.pattern, rule.message).refine(clean, rule.message).max(max, `Use at most ${max} characters.`),
       ]),
     )
     .transform((v) => v || null);
@@ -153,7 +164,7 @@ const profileFields = z.object({
     17,
     { pattern: EORI_PATTERN, message: "Must start with a 2-letter country code followed by up to 15 characters." },
     (v) => v.replace(/\s/g, "").toUpperCase(),
-  ),
+  ).refine((v) => v !== EXAMPLE_EORI, "That's the example number. Enter your own EORI number."),
   taxId: optional(
     30,
     // TAX_ID_PATTERN is what the database enforces; STRICT_TAX_ID also rejects doubled or trailing separators.
@@ -162,7 +173,7 @@ const profileFields = z.object({
       message: "Use letters and digits, with single spaces, dots, slashes or dashes between them.",
     },
     (v) => collapse(v).toUpperCase(),
-  ),
+  ).refine((v) => v !== EXAMPLE_TAX_ID, "That's the example number. Enter your own VAT / tax ID."),
   signatoryName: text(
     "the signatory's name",
     120,
