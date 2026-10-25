@@ -8,7 +8,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
 import { LOGO_BUCKET, MAX_LOGO_BYTES, logoObjectPath } from "./constants";
-import { companyProfileSchema } from "./profile";
+import { companyProfileSchema, type CompanyProfile } from "./profile";
 import { ACTIVE_WORKSPACE_COOKIE, getWorkspaceRole, isWorkspaceMember } from "./queries";
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
@@ -138,7 +138,8 @@ export async function uploadWorkspaceLogo(formData: FormData): Promise<LogoActio
 
 export type ProfileActionState =
   | { status: "idle" }
-  | { status: "saved" }
+  /** What was stored, after trimming and case changes, so the form shows exactly that. */
+  | { status: "saved"; profile: CompanyProfile }
   | { status: "invalid"; fieldErrors: Partial<Record<string, string[]>> }
   | { status: "error"; error: string };
 
@@ -183,7 +184,7 @@ export async function updateWorkspaceProfile(
   }
 
   refresh();
-  return { status: "saved" };
+  return { status: "saved", profile };
 }
 
 /** Clears the workspace logo; invoices fall back to the text header. */
