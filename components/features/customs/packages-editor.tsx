@@ -6,14 +6,17 @@ import {
   SHIPMENT_MASKS,
   packagePath,
   type FieldErrors,
+  type LineFormValues,
   type PackageField,
   type PackageFormValues,
 } from "@/services/customs/shipment-input";
 
-import { FormField, Select, a11y, firstError, input, masked, numeric } from "./form-controls";
+import { FormField, Select, a11y, firstError, iconButton, input, masked, numeric } from "./form-controls";
 
 export type PackagesEditorProps = {
   packages: PackageFormValues[];
+  /** The shipment's items, to choose which one each package carries. */
+  lines: LineFormValues[];
   errors: FieldErrors;
   onChange: (index: number, field: PackageField, value: string) => void;
   onAdd: () => void;
@@ -83,15 +86,17 @@ function Totals({ packages }: { packages: PackageFormValues[] }) {
   );
 }
 
-const iconButton = cn(
-  "inline-grid size-8 place-items-center rounded-md text-ink-muted outline-none transition-colors duration-150",
-  "enabled:hover:bg-ground enabled:hover:text-ink focus-visible:ring-2 focus-visible:ring-accent",
-  "disabled:cursor-not-allowed disabled:opacity-40",
-);
+/** "2 · Thinner for alkyd paint…", so the picker reads like the items above it. */
+function itemLabel(line: LineFormValues, index: number) {
+  const text = line.description.trim();
+  return `${index + 1} · ${text ? (text.length > 48 ? `${text.slice(0, 47)}…` : text) : "Not described yet"}`;
+}
 
-export function PackagesEditor({ packages, errors, onChange, onAdd, onDuplicate, onRemove, onBlurField }: PackagesEditorProps) {
+export function PackagesEditor({ packages, lines, errors, onChange, onAdd, onDuplicate, onRemove, onBlurField }: PackagesEditorProps) {
   const listError = firstError(errors, "packages");
   const full = packages.length >= MAX_PACKAGES;
+  // With one item every package carries it; the picker appears once there's a choice.
+  const chooseItem = lines.length > 1;
 
   return (
     <div className="grid gap-4">
@@ -141,6 +146,20 @@ export function PackagesEditor({ packages, errors, onChange, onAdd, onDuplicate,
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-12">
+                {chooseItem && (
+                  <FormField path={path("line")} label="Item carried" error={error("line")} className="col-span-2 sm:col-span-12">
+                    <Select {...bind("line")}>
+                      <option value="" disabled>
+                        Choose an item
+                      </option>
+                      {lines.map((line, i) => (
+                        <option key={i} value={String(i + 1)}>
+                          {itemLabel(line, i)}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormField>
+                )}
                 <FormField path={path("packageType")} label="Type" error={error("packageType")} className="col-span-2 sm:col-span-3">
                   <Select {...bind("packageType")}>
                     {PACKAGE_TYPES.map(({ code, name }) => (

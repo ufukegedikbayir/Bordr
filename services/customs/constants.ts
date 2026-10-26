@@ -52,13 +52,26 @@ export const EXAMPLE_PRODUCTS = [
   "Ceramic coffee mug, 350g",
 ] as const;
 
-export type CustomsResult = {
+/** One shipment carries at most this many invoice lines (the database agrees). */
+export const MAX_LINES = 30;
+
+export type LineClassification = {
+  /** The line's goods description, as declared. */
+  description: string;
   /** Harmonized System code, e.g. "4202.31" */
   hsCode: string;
   /** Short name of the HS category, at most 6 words */
   hsDescription: string;
   /** Ad valorem import duty as a display string, e.g. "5.0%" */
   estimatedDuty: string;
+  /** Line value in the shipment's currency, for the value-weighted duty. */
+  value: number;
+};
+
+export type CustomsResult = {
+  /** One classification per invoice line, in the declared order. */
+  lines: LineClassification[];
+  currency: string;
   /** Documents required to clear customs */
   requiredDocuments: string[];
   /** Destination the estimate was generated for */

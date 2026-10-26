@@ -13,6 +13,12 @@ export const fieldId = (path: string) => `shipment-${path.replace(/\./g, "-")}`;
 export const input = cn(controlClass, "h-10");
 export const numeric = cn(input, "tabular-nums");
 
+export const iconButton = cn(
+  "inline-grid size-8 place-items-center rounded-md text-ink-muted outline-none transition-colors duration-150",
+  "enabled:hover:bg-ground enabled:hover:text-ink focus-visible:ring-2 focus-visible:ring-accent",
+  "disabled:cursor-not-allowed disabled:opacity-40",
+);
+
 export function firstError(errors: FieldErrors, path: string) {
   return errors[path]?.[0];
 }

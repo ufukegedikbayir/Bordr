@@ -79,8 +79,18 @@ function HsCode({ code }: { code: string }) {
   );
 }
 
+/** "6.5%", or the range "0.0–12.0%" when the lines differ. */
+function dutySummary(lines: ShipmentRow["lines"]) {
+  const rates = lines.map((line) => Number.parseFloat(line.estimated_duty)).filter(Number.isFinite);
+  if (rates.length !== lines.length || new Set(rates).size <= 1) return lines[0]?.estimated_duty ?? "—";
+  return `${Math.min(...rates).toFixed(1)}–${Math.max(...rates).toFixed(1)}%`;
+}
+
 function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUrl: string | null }) {
   const created = new Date(shipment.created_at);
+  const [first] = shipment.lines;
+  const more = shipment.lines.length - 1;
+  const allDescriptions = shipment.lines.map((line) => `${line.position}. ${line.description}`).join("\n");
 
   return (
     <tr className="border-b border-hairline transition-colors duration-150 last:border-0 hover:bg-ground/60">
@@ -93,11 +103,12 @@ function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUr
         </time>
       </td>
       <td className={cn(CELL, "max-w-0 py-3 align-top")}>
-        <p className="truncate font-medium" title={shipment.description}>
-          {shipment.description}
+        <p className="flex items-baseline gap-1.5 font-medium" title={allDescriptions}>
+          <span className="truncate">{first?.description ?? "—"}</span>
+          {more > 0 && <span className="shrink-0 text-xs font-normal text-ink-muted">+{more} more</span>}
         </p>
-        <p className="mt-0.5 truncate text-xs text-ink-muted" title={shipment.hs_description}>
-          {shipment.hs_description}
+        <p className="mt-0.5 truncate text-xs text-ink-muted" title={first?.hs_description}>
+          {more > 0 ? `${shipment.lines.length} items` : first?.hs_description}
         </p>
       </td>
       <td className={cn(CELL, "max-w-48 py-3 align-top")}>
@@ -109,10 +120,11 @@ function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUr
         </span>
       </td>
       <td className={cn(CELL, "py-2.5 align-top")}>
-        <HsCode code={shipment.hs_code} />
+        {first && <HsCode code={first.hs_code} />}
+        {more > 0 && <span className="ml-1.5 text-xs text-ink-muted tabular-nums">+{more}</span>}
       </td>
       <td className={cn(CELL, "py-3 text-right align-top font-medium tabular-nums")}>
-        {shipment.estimated_duty}
+        {dutySummary(shipment.lines)}
       </td>
       <td className={cn(CELL, "py-1.5 text-right align-top")}>
         <DocumentsMenu shipment={shipment} logoUrl={logoUrl} />

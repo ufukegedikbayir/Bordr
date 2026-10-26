@@ -8,7 +8,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { isProfileComplete } from "@/services/workspaces/profile";
 import { getCompanyProfile, isWorkspaceMember } from "@/services/workspaces/queries";
 
-import { isIntraEu, type CustomsActionResult } from "./constants";
+import { isIntraEu, type CustomsActionResult, type CustomsResult } from "./constants";
 import { DOCUMENT_COLUMNS, documentsFromRow, type DocumentRow } from "./documents";
 import { adrDescription, packageTypeName } from "./freight";
 import { INCOTERMS, regionName } from "./invoice";
@@ -21,22 +21,23 @@ import { domesticShipmentError, fieldErrorsFrom, shipmentInputSchema, type Shipm
 // gemini-3.6-flash ranged from 4 s to a stall; minimal thinking answers in
 // ~1.5 s. Re-check these when models change.
 const MODELS = ["gemini-3.6-flash", "gemini-3.1-flash-lite"] as const;
-const REQUEST_TIMEOUT_MS = 12_000;
+// Longer loads need longer answers: a base plus a little per line.
+const requestTimeoutMs = (lines: number) => Math.min(30_000, 10_000 + 1_000 * lines);
 const AI_UNAVAILABLE = "The AI service is unavailable right now. Try again in a moment.";
 
 // The AI classifies and reviews; it never supplies a declared fact. Parties,
 // values, weights, origin and the Incoterm come from the user and the
 // company profile, because the exporter signs the invoice as true.
 const SYSTEM_PROMPT = `You are a senior customs broker and trade compliance officer for international road freight.
-You receive facts an exporter has declared for one commercial invoice line. Treat them as given: never change, invent or restate them.
+You receive facts an exporter has declared for one shipment: the goods on its commercial invoice, as numbered lines. Treat them as given: never change, invent or restate them.
 Your job:
-1. Classify the goods: the most accurate 6-digit HS code and its category name (at most 6 words).
-2. Estimate the destination's import duty for these goods from this origin, as a percentage of customs value.
+1. Classify each line on its own: the most accurate 6-digit HS code and its category name (at most 6 words). Return exactly one entry per line, with the line's item number.
+2. Estimate the destination's import duty for each line from that line's origin, as a percentage of customs value.
    Within the EU customs territory there is no customs border: for goods in free circulation the duty is 0.0% and no export or import declaration is needed.
    Türkiye is in a customs union with the EU for industrial goods (not agricultural products or ECSC steel): with an A.TR movement certificate they enter duty-free.
 3. List the documents customs and the carrier will strictly require for this shipment by road (e.g. Commercial Invoice, Packing List, CMR Consignment Note, Certificate of Origin, Export Declaration).
 4. Give up to 3 short compliance notes (one sentence each) only where something needs the exporter's attention, most important first:
-   - dangerous goods: the goods are likely dangerous goods under ADR but none are declared, or the declared UN number, class or packing group doesn't fit the goods;
+   - dangerous goods: some goods are likely dangerous goods under ADR but none are declared, or the declared UN number, class or packing group fits none of the lines;
    - a preferential origin proof that could reduce duty, licences or restrictions for this product;
    - an Incoterm that makes the exporter responsible for import duties and VAT;
    - declared weights, values or package sizes that look implausible for the goods.
@@ -45,13 +46,18 @@ Return exact JSON.`;
 
 // The .describe() hints steer formatting; the normalizers below enforce it.
 const customsSchema = z.object({
-  hsCode: z.string().describe("6-digit HS code formatted as XXXX.XX"),
-  hsDescription: z
-    .string()
-    .describe("Short name of the HS code category, at most 6 words, e.g. 'Leather pocket articles'"),
-  estimatedDuty: z
-    .string()
-    .describe("Import duty as a percentage of customs value, e.g. 5.0%"),
+  lines: z
+    .array(
+      z.object({
+        item: z.number().describe("The line's item number, as given"),
+        hsCode: z.string().describe("6-digit HS code formatted as XXXX.XX"),
+        hsDescription: z
+          .string()
+          .describe("Short name of the HS code category, at most 6 words, e.g. 'Leather pocket articles'"),
+        estimatedDuty: z.string().describe("Import duty as a percentage of customs value, e.g. 5.0%"),
+      }),
+    )
+    .describe("One entry per declared line, in item order"),
   requiredDocuments: z
     .array(z.string())
     .describe("Names of the customs documents strictly required"),
@@ -143,7 +149,6 @@ export async function generateCustomsData(
     };
   }
   const input = parsed.data;
-  const description = input.description.replace(/\s+/g, " ");
 
   // The client names the workspace; never trust it. Checked before the AI
   // call so a forged id costs no quota. RLS enforces the same rule on insert.
@@ -171,20 +176,25 @@ export async function generateCustomsData(
 
   const incoterm = INCOTERMS.find(({ code }) => code === input.incoterm)!;
   const { totals } = input;
-  const total = totals.quantity * input.unitPrice;
   const prompt = `Declared facts (JSON):
 ${JSON.stringify(
   {
-    goods: description,
-    quantity: totals.quantity,
-    unitPrice: `${input.unitPrice.toFixed(2)} ${input.currency}`,
-    totalValue: `${total.toFixed(2)} ${input.currency}`,
-    countryOfOrigin: `${regionName(input.originCountry)} (${input.originCountry})`,
+    lines: input.lines.map((line, i) => ({
+      item: i + 1,
+      goods: line.description,
+      quantity: line.quantity,
+      unitPrice: `${line.unitPrice.toFixed(2)} ${input.currency}`,
+      value: `${(line.quantity * line.unitPrice).toFixed(2)} ${input.currency}`,
+      countryOfOrigin: `${regionName(line.originCountry)} (${line.originCountry})`,
+      netWeightKg: line.netWeightKg,
+    })),
+    totalValue: `${totals.value.toFixed(2)} ${input.currency}`,
     exporterCountry: `${regionName(profile.countryCode!)} (${profile.countryCode})`,
     destinationCountry: `${regionName(input.country)} (${input.country})`,
     customsBorder: intraEu ? "None: both countries are in the EU customs territory" : "Yes",
     incoterm: `${incoterm.code} (${incoterm.name}) ${input.incotermPlace}`,
     packages: input.packages.map((p) => ({
+      item: p.line,
       type: packageTypeName(p.packageType),
       pieces: p.quantity,
       netKg: p.netWeightKg,
@@ -201,7 +211,7 @@ ${JSON.stringify(
 )}`;
 
   for (const modelId of MODELS) {
-    let data;
+    let data: CustomsResult;
     try {
       const { output } = await generateText({
         model: google(modelId),
@@ -210,27 +220,36 @@ ${JSON.stringify(
         prompt,
         temperature: 0,
         maxRetries: 0, // the fallback model is the retry
-        abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        abortSignal: AbortSignal.timeout(requestTimeoutMs(input.lines.length)),
         // HS lookup needs recall, not long reasoning; minimal thinking prevents stalls.
         providerOptions: {
           google: { thinkingConfig: { thinkingLevel: "minimal" } },
         },
       });
 
-      const hsCode = normalizeHsCode(output.hsCode);
-      const estimatedDuty = normalizeDuty(output.estimatedDuty);
+      // Matched by item number, never by array position: a model that skips or
+      // reorders a line must not put one line's code on another.
+      const lines = input.lines.map((line, i) => {
+        const entry = output.lines.find((l) => l.item === i + 1);
+        const hsCode = entry && normalizeHsCode(entry.hsCode);
+        const estimatedDuty = entry && normalizeDuty(entry.estimatedDuty);
+        if (!entry || !hsCode || !estimatedDuty) {
+          throw new Error(`Unusable model output for item ${i + 1}: ${JSON.stringify(entry ?? null).slice(0, 200)}`);
+        }
+        return {
+          description: line.description,
+          hsCode,
+          hsDescription: normalizeHsDescription(entry.hsDescription) || "Description unavailable",
+          estimatedDuty,
+          value: Math.round(line.quantity * line.unitPrice * 100) / 100,
+        };
+      });
       const requiredDocuments = normalizeDocuments(output.requiredDocuments);
-
-      if (!hsCode || !estimatedDuty || requiredDocuments.length === 0) {
-        throw new Error(
-          `Unusable model output: hsCode=${JSON.stringify(output.hsCode)} estimatedDuty=${JSON.stringify(output.estimatedDuty)} documents=${requiredDocuments.length}`,
-        );
-      }
+      if (requiredDocuments.length === 0) throw new Error("Unusable model output: no documents");
 
       data = {
-        hsCode,
-        hsDescription: normalizeHsDescription(output.hsDescription) || "Description unavailable",
-        estimatedDuty,
+        lines,
+        currency: input.currency,
         requiredDocuments,
         country: input.country,
         complianceNotes: normalizeNotes(output.complianceNotes ?? []),
@@ -240,14 +259,14 @@ ${JSON.stringify(
       continue;
     }
 
-    // Persist before returning, in one transaction: the shipment, its carrier
-    // and its packages. The database computes the totals from the packages and
+    // Persist before returning, in one transaction: the shipment, its carrier,
+    // lines and packages. The database computes the totals from the packages and
     // adds the exporter snapshot and the invoice number. A failed save still
     // returns the classification (the AI quota is spent) but no documents,
     // since they need the saved number.
     const { data: shipmentId, error: saveError } = await supabase.rpc(
       "create_shipment",
-      createShipmentPayload(input, workspaceId, { ...data, description }, profile.countryCode!),
+      createShipmentPayload(input, workspaceId, data, profile.countryCode!),
     );
 
     if (saveError || typeof shipmentId !== "string") {

@@ -1,10 +1,14 @@
 // A deliberately demanding shipment for rendering and checking the document
-// suite: dangerous goods (ADR class 3), mixed package types, 14 packages,
-// Turkish and German characters, a trailer, and a DAP named place.
+// suite: a consolidated load of three items from two countries of origin,
+// dangerous goods (ADR class 3), mixed package types, 14 packages, Turkish and
+// German characters, a trailer, and a DAP named place.
 import type { PackageData, ShipmentDocuments } from "@/services/customs/documents";
+import type { InvoiceLine } from "@/services/customs/invoice";
 
+// Item 1: paint, made in Türkiye.
 const EUR_PALLETS: PackageData[] = Array.from({ length: 12 }, (_, i) => ({
   position: i + 1,
+  line: 1,
   packageType: "eur_pallet",
   marks: `ABS/RF/2610/${String(i + 1).padStart(2, "0")}`,
   // 32 drums × 22.0 kg paint; drums 1.6 kg each, pallet 25 kg.
@@ -16,19 +20,38 @@ const EUR_PALLETS: PackageData[] = Array.from({ length: 12 }, (_, i) => ({
   heightCm: 115,
 }));
 
-const HALF_LOADS: PackageData[] = [13, 14].map((position) => ({
-  position,
+// Item 2: thinner in 5 l cans, made in Türkiye. Item 3: brushes, made in China.
+const HALF_LOADS: PackageData[] = [
+  { position: 13, line: 2, quantity: 96, netWeightKg: 422.4, grossWeightKg: 471.8 },
+  { position: 14, line: 3, quantity: 600, netWeightKg: 84, grossWeightKg: 112.5 },
+].map((p) => ({
+  ...p,
   packageType: "pallet",
-  marks: `ABS/RF/2610/${position}`,
-  quantity: 16,
-  netWeightKg: 352,
-  grossWeightKg: 402.6,
+  marks: `ABS/RF/2610/${p.position}`,
   lengthCm: 120,
   widthCm: 100,
   heightCm: 62,
 }));
 
 const packages = [...EUR_PALLETS, ...HALF_LOADS];
+
+const ITEMS = [
+  { description: "Industrial alkyd paint, solvent-based, RAL 7035, in 20 l steel drums", hsCode: "3208.90", originCountry: "TR", unitPrice: 48.5 },
+  { description: "Thinner for alkyd paint, in 5 l steel cans", hsCode: "3814.00", originCountry: "TR", unitPrice: 12.25 },
+  { description: "Paint brushes, synthetic bristle, 50 mm", hsCode: "9603.40", originCountry: "CN", unitPrice: 1.1 },
+];
+
+// Quantities and weights are the sums of each item's packages, as the database computes them.
+const lines: InvoiceLine[] = ITEMS.map((item, i) => {
+  const own = packages.filter((p) => p.line === i + 1);
+  return {
+    position: i + 1,
+    ...item,
+    quantity: own.reduce((sum, p) => sum + p.quantity, 0),
+    netWeightKg: own.reduce((sum, p) => sum + p.netWeightKg, 0),
+    grossWeightKg: own.reduce((sum, p) => sum + p.grossWeightKg, 0),
+  };
+});
 
 export const complexShipment: ShipmentDocuments = {
   invoice: {
@@ -52,16 +75,10 @@ export const complexShipment: ShipmentDocuments = {
     incoterm: "DAP",
     incotermPlace: "Duisburg, Logistikzentrum Nord",
     currency: "EUR",
-    originCountry: "TR",
     packageCount: packages.length,
     grossWeightKg: packages.reduce((sum, p) => sum + p.grossWeightKg, 0),
     netWeightKg: packages.reduce((sum, p) => sum + p.netWeightKg, 0),
-    line: {
-      description: "Industrial alkyd paint, solvent-based, RAL 7035, in 20 l steel drums",
-      hsCode: "3208.90",
-      quantity: packages.reduce((sum, p) => sum + p.quantity, 0),
-      unitPrice: 48.5,
-    },
+    lines,
     signatory: { name: "Elif Yılmaz", title: "İhracat Müdürü (Export Manager)" },
   },
   packages,

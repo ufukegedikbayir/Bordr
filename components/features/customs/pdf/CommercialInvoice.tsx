@@ -1,6 +1,14 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import { INCOTERMS, regionName, type InvoiceData, type InvoiceParty } from "@/services/customs/invoice";
+import {
+  INCOTERMS,
+  invoiceTotal,
+  lineValue,
+  originCountries,
+  regionName,
+  type InvoiceData,
+  type InvoiceParty,
+} from "@/services/customs/invoice";
 
 import { country, formatDate, integer, kilograms, money } from "./kit";
 
@@ -70,6 +78,7 @@ const styles = StyleSheet.create({
   },
   th: { paddingVertical: 5, paddingHorizontal: 5, fontSize: 6.5, color: MUTED, letterSpacing: 0.3, textTransform: "uppercase" },
   tr: { flexDirection: "row" },
+  rowDivider: { borderTopWidth: 0.5, borderTopColor: HAIRLINE },
   td: { paddingVertical: 6, paddingHorizontal: 5 },
   colDivider: { borderRightWidth: BORDER, borderRightColor: HAIRLINE },
   colNo: { width: 24, textAlign: "center" },
@@ -171,10 +180,12 @@ function Party({ n, label, party, divider }: { n: number; label: string; party: 
   );
 }
 
-/** A commercial invoice laid out as a customs form: numbered boxes, one line per HS code. */
+/** A commercial invoice laid out as a customs form: numbered boxes, one row per invoice line. */
 export function CommercialInvoice({ invoice, logoUrl }: CommercialInvoiceProps) {
-  const { line, currency } = invoice;
-  const total = line.quantity * line.unitPrice;
+  const { lines, currency } = invoice;
+  const total = invoiceTotal(invoice);
+  const origins = originCountries(invoice);
+  const singleOrigin = origins.length === 1 ? origins[0]! : null;
   const incoterm = INCOTERMS.find(({ code }) => code === invoice.incoterm);
   const terms = `${invoice.incoterm} ${invoice.incotermPlace}`;
   const issued = formatDate(invoice.issuedAt);
@@ -214,7 +225,13 @@ export function CommercialInvoice({ invoice, logoUrl }: CommercialInvoiceProps) 
               <Cell n={5} label="Incoterms® 2020" value={terms} note={incoterm?.name} />
             </View>
             <View style={styles.cellRow}>
-              <Cell n={6} label="Country of origin" value={country(invoice.originCountry)} divider />
+              <Cell
+                n={6}
+                label="Country of origin"
+                value={singleOrigin ? country(singleOrigin) : "Various"}
+                note={singleOrigin ? undefined : `Per line: ${origins.join(", ")}`}
+                divider
+              />
               <Cell n={7} label="Country of destination" value={country(invoice.destination)} />
             </View>
             <View style={styles.cellRow}>
@@ -243,16 +260,18 @@ export function CommercialInvoice({ invoice, logoUrl }: CommercialInvoiceProps) 
             <Text style={[styles.th, styles.colAmount]}>Amount {currency}</Text>
           </View>
 
-          <View style={styles.tr} wrap={false}>
-            <Text style={[styles.td, styles.colNo, styles.colDivider]}>1</Text>
-            <Text style={[styles.td, styles.colDescription, styles.colDivider]}>{line.description}</Text>
-            <Text style={[styles.td, styles.colHs, styles.colDivider, styles.strong]}>{line.hsCode}</Text>
-            <Text style={[styles.td, styles.colOrigin, styles.colDivider]}>{invoice.originCountry}</Text>
-            <Text style={[styles.td, styles.colQty, styles.colDivider]}>{integer.format(line.quantity)} pcs</Text>
-            <Text style={[styles.td, styles.colNet, styles.colDivider]}>{kilograms.format(invoice.netWeightKg)}</Text>
-            <Text style={[styles.td, styles.colUnit, styles.colDivider]}>{money.format(line.unitPrice)}</Text>
-            <Text style={[styles.td, styles.colAmount, styles.strong]}>{money.format(total)}</Text>
-          </View>
+          {lines.map((line, i) => (
+            <View key={line.position} style={[styles.tr, i > 0 ? styles.rowDivider : {}]} wrap={false}>
+              <Text style={[styles.td, styles.colNo, styles.colDivider]}>{line.position}</Text>
+              <Text style={[styles.td, styles.colDescription, styles.colDivider]}>{line.description}</Text>
+              <Text style={[styles.td, styles.colHs, styles.colDivider, styles.strong]}>{line.hsCode}</Text>
+              <Text style={[styles.td, styles.colOrigin, styles.colDivider]}>{line.originCountry}</Text>
+              <Text style={[styles.td, styles.colQty, styles.colDivider]}>{integer.format(line.quantity)} pcs</Text>
+              <Text style={[styles.td, styles.colNet, styles.colDivider]}>{kilograms.format(line.netWeightKg)}</Text>
+              <Text style={[styles.td, styles.colUnit, styles.colDivider]}>{money.format(line.unitPrice)}</Text>
+              <Text style={[styles.td, styles.colAmount, styles.strong]}>{money.format(lineValue(line))}</Text>
+            </View>
+          ))}
 
           <View style={styles.totals} wrap={false}>
             <Text style={[styles.totalsLabel, styles.strong]}>Total invoice value ({currency})</Text>
@@ -268,8 +287,10 @@ export function CommercialInvoice({ invoice, logoUrl }: CommercialInvoiceProps) 
             <Label n={13}>Declaration</Label>
             <Text style={styles.declarationText}>
               We hereby certify that this invoice shows the actual price of the goods described, that
-              all particulars shown are true and correct, and that the country of origin of the goods
-              is {regionName(invoice.originCountry)}.
+              all particulars shown are true and correct, and that
+              {singleOrigin
+                ? ` the country of origin of the goods is ${regionName(singleOrigin)}.`
+                : " the country of origin of each line is as stated against it."}
             </Text>
           </View>
           <View style={styles.signRow}>

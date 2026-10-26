@@ -1,11 +1,11 @@
-import type { FormEvent, KeyboardEvent, Ref } from "react";
+import type { FormEvent, Ref } from "react";
 import { Sparkles, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { cn } from "@/lib/utils/cn";
 import type { Carrier } from "@/services/carriers/queries";
-import { DESTINATIONS, EXAMPLE_PRODUCTS, MAX_DESCRIPTION_LENGTH, isIntraEu } from "@/services/customs/constants";
+import { DESTINATIONS, isIntraEu } from "@/services/customs/constants";
 import { ADR_CLASSES, PACKING_GROUPS, TUNNEL_CODES, customsFormalities } from "@/services/customs/freight";
 import { CURRENCIES, INCOTERMS, WORLD_COUNTRIES, type Incoterm } from "@/services/customs/invoice";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/services/customs/shipment-input";
 
 import { FormField, Fieldset, Select, a11y, firstError, input, masked, numeric } from "./form-controls";
+import { LinesEditor, type LinesEditorProps } from "./lines-editor";
 import { PackagesEditor, type PackagesEditorProps } from "./packages-editor";
 
 type ShipmentFormProps = {
@@ -30,7 +31,8 @@ type ShipmentFormProps = {
   onPickCarrier: (carrier: Carrier) => void;
   onSubmit: () => void;
   onBlurField: (path: string) => void;
-  packages: Omit<PackagesEditorProps, "packages" | "errors">;
+  lines: Pick<LinesEditorProps, "onChange" | "onAdd" | "onRemove" | "onBlurField">;
+  packages: Omit<PackagesEditorProps, "packages" | "lines" | "errors">;
 };
 
 function CountryOptions() {
@@ -96,6 +98,7 @@ export function ShipmentForm({
   onPickCarrier,
   onSubmit,
   onBlurField,
+  lines,
   packages,
 }: ShipmentFormProps) {
   const error = (key: ScalarField) => firstError(errors, key);
@@ -113,13 +116,6 @@ export function ShipmentForm({
     onSubmit();
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      onSubmit();
-    }
-  }
-
   return (
     <section
       aria-labelledby="shipment-details-heading"
@@ -133,65 +129,33 @@ export function ShipmentForm({
 
       <form onSubmit={handleSubmit} noValidate className="grid gap-6 p-6">
         <fieldset disabled={pending} className="contents">
-          <Fieldset legend="Goods" description="What you're shipping, as it should appear on every document.">
-            <FormField
-              path="description"
-              label="Description of goods"
-              hint="Plain trade description: material, type and use."
-              error={error("description")}
-            >
-              <textarea
-                ref={textareaRef}
-                {...bind("description", true)}
-                rows={3}
-                maxLength={MAX_DESCRIPTION_LENGTH}
-                onKeyDown={handleKeyDown}
-                placeholder="e.g. Industrial alkyd paint, solvent-based, in 20 l steel drums"
-                className={cn(controlClass, "min-h-20 resize-y py-2.5 leading-[1.375rem]")}
-              />
-            </FormField>
-
-            <div className="-mt-1 flex flex-wrap items-center gap-2">
-              <span className="text-[13px] text-ink-muted">Try</span>
-              {EXAMPLE_PRODUCTS.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => onChange("description", example)}
-                  className={cn(
-                    "h-8 rounded-full border border-hairline bg-surface px-3 text-[13px] text-ink-muted",
-                    "transition-colors duration-150 enabled:hover:border-hairline-strong enabled:hover:text-ink",
-                    "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-                    "disabled:cursor-not-allowed disabled:opacity-60",
-                  )}
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1.4fr)]">
-              <FormField path="unitPrice" label="Unit price" error={error("unitPrice")}>
-                <input {...bind("unitPrice")} inputMode="decimal" placeholder="0.00" className={numeric} />
-              </FormField>
-              <FormField path="currency" label="Currency" error={error("currency")}>
-                <Select {...bind("currency")}>
+          <Fieldset
+            legend="Goods"
+            description="One item per kind of goods, as each should appear on the invoice. Each item gets its own HS code."
+            aside={
+              <div className="flex items-center gap-2">
+                <label htmlFor={a11y("currency", undefined).id} className="text-[13px] text-ink-muted">
+                  Invoice currency
+                </label>
+                <Select {...bind("currency")} className="w-28">
                   {CURRENCIES.map((code) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
                   ))}
                 </Select>
-              </FormField>
-              <FormField path="originCountry" label="Country of origin" error={error("originCountry")}>
-                <Select {...bind("originCountry")}>
-                  <CountryOptions />
-                </Select>
-              </FormField>
-            </div>
-            <p className="-mt-2 text-[13px] text-ink-muted">
-              Origin is where the goods were made or last substantially transformed, not necessarily where they ship from.
-            </p>
+              </div>
+            }
+          >
+            <LinesEditor
+              lines={values.lines}
+              packages={values.packages}
+              currency={values.currency}
+              errors={errors}
+              textareaRef={textareaRef}
+              onSubmitShortcut={onSubmit}
+              {...lines}
+            />
           </Fieldset>
 
           <Fieldset
@@ -265,8 +229,8 @@ export function ShipmentForm({
             )}
           </Fieldset>
 
-          <Fieldset legend="Packages" description="One entry per pallet or package, as labelled. Totals feed every document.">
-            <PackagesEditor packages={values.packages} errors={errors} {...packages} />
+          <Fieldset legend="Packages" description="One entry per pallet or package, as labelled. Each carries one item's goods; the totals feed every document.">
+            <PackagesEditor packages={values.packages} lines={values.lines} errors={errors} {...packages} />
           </Fieldset>
 
           <Fieldset legend="Delivery" description="Terms of delivery and where the goods go.">

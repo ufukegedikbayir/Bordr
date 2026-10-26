@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { collapse, collapseLines, isCleanLines, isCleanText, tidy, SYMBOLS_MESSAGE } from "@/lib/validation/text";
 
-import { DESTINATIONS, MAX_DESCRIPTION_LENGTH, type CountryCode } from "./constants";
+import { DESTINATIONS, MAX_DESCRIPTION_LENGTH, MAX_LINES, type CountryCode } from "./constants";
 import {
   ADR_CLASSES,
   MAX_PACKAGES,
@@ -25,7 +25,16 @@ import { CURRENCIES, INCOTERMS, TAX_ID_PATTERN, isIsoCountry, type Incoterm } fr
 // Form values: everything is a string until validated
 // ---------------------------------------------------------------------------
 
+/** One invoice line: what the goods are, what they cost, where they were made. */
+export type LineFormValues = {
+  description: string;
+  unitPrice: string;
+  originCountry: string;
+};
+
 export type PackageFormValues = {
+  /** Item number ("1", "2", …) of the line whose goods the package carries. */
+  line: string;
   packageType: string;
   marks: string;
   quantity: string;
@@ -37,10 +46,8 @@ export type PackageFormValues = {
 };
 
 export type ShipmentFormValues = {
-  description: string;
-  unitPrice: string;
+  lines: LineFormValues[];
   currency: string;
-  originCountry: string;
   country: string;
   incoterm: string;
   incotermPlace: string;
@@ -65,18 +72,23 @@ export type ShipmentFormValues = {
   packages: PackageFormValues[];
 };
 
-export type ScalarField = Exclude<keyof ShipmentFormValues, "packages">;
+export type ScalarField = Exclude<keyof ShipmentFormValues, "packages" | "lines">;
+export type LineField = keyof LineFormValues;
 export type PackageField = keyof PackageFormValues;
 
-/** Error keys are dotted paths: "carrierName", "packages.2.grossWeightKg". */
+/** Error keys are dotted paths: "carrierName", "lines.1.unitPrice", "packages.2.grossWeightKg". */
 export type FieldErrors = Partial<Record<string, string[]>>;
+
+export function linePath(index: number, field?: LineField) {
+  return field ? `lines.${index}.${field}` : `lines.${index}`;
+}
 
 export function packagePath(index: number, field: PackageField) {
   return `packages.${index}.${field}`;
 }
 
 /** Typing masks: only changes the user can't object to (case, stray spaces). */
-export const SHIPMENT_MASKS: Partial<Record<ScalarField | PackageField, (value: string) => string>> = {
+export const SHIPMENT_MASKS: Partial<Record<ScalarField | LineField | PackageField, (value: string) => string>> = {
   consigneeTaxId: (v) => tidy(v).toUpperCase(),
   vehicleRegistration: (v) => tidy(v).toUpperCase(),
   trailerRegistration: (v) => tidy(v).toUpperCase(),
@@ -87,7 +99,10 @@ export const SHIPMENT_MASKS: Partial<Record<ScalarField | PackageField, (value: 
   marks: (v) => tidy(v).toUpperCase(),
 };
 
+export const EMPTY_LINE: LineFormValues = { description: "", unitPrice: "", originCountry: "" };
+
 export const EMPTY_PACKAGE: PackageFormValues = {
+  line: "1",
   packageType: "eur_pallet",
   marks: "",
   quantity: "",
@@ -224,8 +239,26 @@ const destinationCodes = DESTINATIONS.map(({ code }) => code) as [CountryCode, .
 const packageTypeCodes = PACKAGE_TYPES.map(({ code }) => code) as [PackageType, ...PackageType[]];
 const adrClassCodes = ADR_CLASSES.map(({ code }) => code) as [AdrClass, ...AdrClass[]];
 
+const CHOOSE_ITEM = "Choose the item this package carries.";
+
+const lineSchema = z.object({
+  description: z
+    .string()
+    .transform(collapse)
+    .pipe(
+      z
+        .string()
+        .min(1, "Enter a description of the goods.")
+        .refine(isCleanText, SYMBOLS_MESSAGE)
+        .max(MAX_DESCRIPTION_LENGTH, `Use at most ${MAX_DESCRIPTION_LENGTH} characters.`),
+    ),
+  unitPrice: amount("the unit price", 2, 1_000_000_000),
+  originCountry: country("Choose the country where the goods were made."),
+});
+
 const packageSchema = z
   .object({
+    line: z.coerce.number({ error: CHOOSE_ITEM }).int(CHOOSE_ITEM).min(1, CHOOSE_ITEM),
     packageType: z.enum(packageTypeCodes, { error: "Choose a package type." }),
     marks: z
       .string()
@@ -256,22 +289,15 @@ const packageSchema = z
   });
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 export const shipmentInputSchema = z
   .object({
-    description: z
-      .string()
-      .transform(collapse)
-      .pipe(
-        z
-          .string()
-          .min(1, "Enter a product description.")
-          .refine(isCleanText, SYMBOLS_MESSAGE)
-          .max(MAX_DESCRIPTION_LENGTH, `Use at most ${MAX_DESCRIPTION_LENGTH} characters.`),
-      ),
-    unitPrice: amount("the unit price", 2, 1_000_000_000),
+    lines: z
+      .array(lineSchema)
+      .min(1, "Add at least one item.")
+      .max(MAX_LINES, `At most ${MAX_LINES} items per shipment.`),
     currency: z.enum(CURRENCIES, { error: "Choose a currency." }),
-    originCountry: country("Choose the country where the goods were made."),
     country: z.enum(destinationCodes, { error: "Choose a supported destination country." }),
     incoterm: z.enum(INCOTERMS.map(({ code }) => code) as [Incoterm, ...Incoterm[]], {
       error: "Choose an Incoterm.",
@@ -321,6 +347,20 @@ export const shipmentInputSchema = z
       }
     }
 
+    // Each package carries one item's goods, and each item travels in at least one package.
+    v.packages.forEach((p, i) => {
+      if (p.line > v.lines.length) ctx.addIssue({ code: "custom", path: ["packages", i, "line"], message: CHOOSE_ITEM });
+    });
+    v.lines.forEach((_, i) => {
+      if (!v.packages.some((p) => p.line === i + 1)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["lines", i],
+          message: `No package carries item ${i + 1}. Choose it on a package below, or remove the item.`,
+        });
+      }
+    });
+
     // Every package must be identifiable at inspection.
     const seen = new Map<string, number>();
     v.packages.forEach((p, i) => {
@@ -365,11 +405,20 @@ export const shipmentInputSchema = z
           }
         : null;
 
+    // Each line's quantity and weights are its packages' sums, as the database computes them.
+    const lines = v.lines.map((line, i) => {
+      const own = v.packages.filter((p) => p.line === i + 1);
+      return {
+        ...line,
+        quantity: own.reduce((sum, p) => sum + p.quantity, 0),
+        netWeightKg: round3(own.reduce((sum, p) => sum + p.netWeightKg, 0)),
+        grossWeightKg: round3(own.reduce((sum, p) => sum + p.grossWeightKg, 0)),
+      };
+    });
+
     return {
-      description: v.description,
-      unitPrice: v.unitPrice,
+      lines,
       currency: v.currency,
-      originCountry: v.originCountry,
       country: v.country,
       incoterm: v.incoterm,
       incotermPlace: v.incotermPlace,
@@ -393,13 +442,13 @@ export const shipmentInputSchema = z
         quantity: v.packages.reduce((sum, p) => sum + p.quantity, 0),
         netWeightKg: round3(v.packages.reduce((sum, p) => sum + p.netWeightKg, 0)),
         grossWeightKg: round3(v.packages.reduce((sum, p) => sum + p.grossWeightKg, 0)),
+        value: round2(lines.reduce((sum, line) => sum + round2(line.quantity * line.unitPrice), 0)),
       },
     };
   });
 
 export type ShipmentInput = z.output<typeof shipmentInputSchema>;
 
-/** First message per dotted path, the shape the form renders. */
 /**
  * The CMR Convention covers carriage between two countries only (Art. 1), so
  * the destination can't be the exporter's own country. Checked apart from the
@@ -411,6 +460,7 @@ export function domesticShipmentError(destination: string, exporterCountry: stri
     : null;
 }
 
+/** Every message per dotted path, the shape the form renders. */
 export function fieldErrorsFrom(error: z.ZodError): FieldErrors {
   const errors: FieldErrors = {};
   for (const issue of error.issues) {

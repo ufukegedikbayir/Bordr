@@ -61,6 +61,10 @@ const s = StyleSheet.create({
   statement: { marginTop: 6, fontSize: 7, color: MUTED, lineHeight: 1.4 },
 });
 
+// Boxes 6–12 fit about this many rows on one copy. A larger consolidated load
+// is summarised and refers to the packing list, attached under box 5.
+const MAX_GOODS_ROWS = 8;
+
 /** "RF-01, RF-02" or, for long runs, "RF-01 … RF-24 (24)". */
 function marksSummary(marks: string[]) {
   if (marks.length <= 4) return marks.join(", ");
@@ -73,6 +77,34 @@ function Copy({ data, copy }: { data: CmrData; copy: (typeof COPIES)[number] }) 
   const groups = packageGroups(packages);
   const totalGross = packages.reduce((sum, p) => sum + p.grossWeightKg, 0);
   const totalVolume = groups.reduce((sum, g) => sum + g.volumeM3, 0);
+  const packingList = documentNumber(invoice.invoiceNumber, "PL");
+  const goodsRows =
+    groups.length <= MAX_GOODS_ROWS
+      ? groups.map((group) => {
+          const line = invoice.lines.find((l) => l.position === group.line);
+          return {
+            key: `${group.line}:${group.packageType}`,
+            marks: marksSummary(group.marks),
+            count: group.count,
+            packing: packageTypeName(group.packageType, group.count),
+            nature: line?.description ?? "",
+            statistical: line?.hsCode ?? "",
+            grossWeightKg: group.grossWeightKg,
+            volumeM3: group.volumeM3,
+          };
+        })
+      : [
+          {
+            key: "summary",
+            marks: marksSummary(packages.map((p) => p.marks)),
+            count: packages.length,
+            packing: "Various",
+            nature: `Consolidated load of ${invoice.lines.length} items, itemised in packing list ${packingList}`,
+            statistical: "See PL",
+            grossWeightKg: totalGross,
+            volumeM3: totalVolume,
+          },
+        ];
   const freight = freightPayer(invoice.incoterm);
   const duties = dutiesPayer(invoice.incoterm);
   const takenOver = formatDate(transport.takingOverDate);
@@ -146,11 +178,11 @@ function Copy({ data, copy }: { data: CmrData; copy: (typeof COPIES)[number] }) 
           </Box>
           <Box n={5} label="Documents attached" style={[s.half, s.minSmall]}>
             <Text style={kit.line}>Commercial invoice {invoice.invoiceNumber}</Text>
-            <Text style={kit.line}>Packing list {documentNumber(invoice.invoiceNumber, "PL")}</Text>
+            <Text style={kit.line}>Packing list {packingList}</Text>
           </Box>
         </View>
 
-        {/* Boxes 6–12: one row per kind of package. */}
+        {/* Boxes 6–12: one row per item and kind of package. */}
         <View style={kit.rowRule}>
           <View style={s.goodsHead}>
             <Text style={[kit.th, s.cMarks, kit.hairlineCol]}>6 Marks and numbers</Text>
@@ -161,15 +193,15 @@ function Copy({ data, copy }: { data: CmrData; copy: (typeof COPIES)[number] }) 
             <Text style={[kit.th, s.cGross, kit.hairlineCol]}>11 Gross weight kg</Text>
             <Text style={[kit.th, s.cVolume]}>12 Volume m³</Text>
           </View>
-          {groups.map((group, i) => (
-            <View key={group.packageType} style={[kit.row, i > 0 ? { borderTopWidth: 0.5, borderTopColor: HAIRLINE } : {}]} wrap={false}>
-              <Text style={[kit.td, s.cMarks, kit.hairlineCol]}>{marksSummary(group.marks)}</Text>
-              <Text style={[kit.td, s.cCount, kit.hairlineCol, kit.strong]}>{integer.format(group.count)}</Text>
-              <Text style={[kit.td, s.cPacking, kit.hairlineCol]}>{packageTypeName(group.packageType, group.count)}</Text>
-              <Text style={[kit.td, s.cNature, kit.hairlineCol]}>{invoice.line.description}</Text>
-              <Text style={[kit.td, s.cStat, kit.hairlineCol]}>{invoice.line.hsCode}</Text>
-              <Text style={[kit.td, s.cGross, kit.hairlineCol]}>{kilograms.format(group.grossWeightKg)}</Text>
-              <Text style={[kit.td, s.cVolume]}>{cubicMetres.format(group.volumeM3)}</Text>
+          {goodsRows.map((row, i) => (
+            <View key={row.key} style={[kit.row, i > 0 ? { borderTopWidth: 0.5, borderTopColor: HAIRLINE } : {}]} wrap={false}>
+              <Text style={[kit.td, s.cMarks, kit.hairlineCol]}>{row.marks}</Text>
+              <Text style={[kit.td, s.cCount, kit.hairlineCol, kit.strong]}>{integer.format(row.count)}</Text>
+              <Text style={[kit.td, s.cPacking, kit.hairlineCol]}>{row.packing}</Text>
+              <Text style={[kit.td, s.cNature, kit.hairlineCol]}>{row.nature}</Text>
+              <Text style={[kit.td, s.cStat, kit.hairlineCol]}>{row.statistical}</Text>
+              <Text style={[kit.td, s.cGross, kit.hairlineCol]}>{kilograms.format(row.grossWeightKg)}</Text>
+              <Text style={[kit.td, s.cVolume]}>{cubicMetres.format(row.volumeM3)}</Text>
             </View>
           ))}
           {dangerousGoods ? (
