@@ -2,6 +2,7 @@
 // every invoice. Shared by the settings form, its Server Action and queries.
 import { z } from "zod";
 
+import { collapse, hasOnlyAllowedCharacters, tidy } from "@/lib/validation/text";
 import { EORI_PATTERN, TAX_ID_PATTERN, isIsoCountry } from "@/services/customs/invoice";
 
 export type CompanyProfile = {
@@ -80,12 +81,7 @@ export const PROFILE_MASKS: Partial<Record<keyof CompanyProfile, (value: string)
   postalCode: (v) => tidy(v).toUpperCase(),
 };
 
-/** No leading whitespace, no runs of spaces. Trailing space survives so the user can keep typing. */
-export function tidy(value: string): string {
-  return value.replace(/^\s+/, "").replace(/\s{2,}/g, " ");
-}
-
-const collapse = (v: string) => v.trim().replace(/\s+/g, " ");
+export { tidy };
 
 // Letters in any script (\p{L}, with accents \p{M}), digits, and the
 // punctuation real names and addresses use. Emoji and symbols are excluded.
@@ -103,8 +99,7 @@ const SYMBOLS = "Use letters, numbers and normal punctuation only, no emoji or s
 // The database's private.is_clean_text() deny-list. A few of these count as
 // letters or digits in Unicode (①, ℓ), so the patterns above alone would let
 // them through to a constraint error.
-const DENIED = /[\u00A9\u00AE\u200B-\u200F\u2060-\u206F\u20A0-\u20CF\u2100-\u214F\u2190-\u2BFF\uE000-\uF8FF\uFE00-\uFE0F\u{1F000}-\u{1FAFF}\u{E0000}-\u{E007F}]/u;
-const clean = (v: string) => !DENIED.test(v);
+const clean = hasOnlyAllowedCharacters;
 
 // The examples shown in the form. Saved as-is they'd print a fake identity.
 const EXAMPLE_EORI = "DE123456789012345";

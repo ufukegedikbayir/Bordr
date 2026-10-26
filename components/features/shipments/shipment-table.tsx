@@ -2,11 +2,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, PackageOpen } from "lucide-react";
 
-import { DashboardInvoiceDownload } from "@/components/features/customs/DashboardInvoiceDownload";
 import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils/cn";
 import { COUNTRIES } from "@/services/customs/constants";
 import { HISTORY_LIMIT, type ShipmentRow } from "@/services/shipments/queries";
+
+import { DocumentsMenu } from "./documents-menu";
 
 const COLUMNS = [
   { label: "Date", className: "w-36" },
@@ -14,7 +15,7 @@ const COLUMNS = [
   { label: "Destination", className: "w-44" },
   { label: "HS code", className: "w-32" },
   { label: "Duty", className: "w-24 text-right" },
-  { label: "Actions", className: "w-16 text-right", srOnly: true },
+  { label: "Documents", className: "w-24 text-right", srOnly: true },
 ] as const;
 
 // Edge cells get the card's 24px inset; inner cells 16px.
@@ -111,13 +112,13 @@ function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUr
         {shipment.estimated_duty}
       </td>
       <td className={cn(CELL, "py-1.5 text-right align-top")}>
-        <DashboardInvoiceDownload shipment={shipment} logoUrl={logoUrl} />
+        <DocumentsMenu shipment={shipment} logoUrl={logoUrl} />
       </td>
     </tr>
   );
 }
 
-/** `logoUrl` is the workspace logo for the invoices these rows download. */
+/** `logoUrl` is the workspace logo for the documents these rows download. */
 export function ShipmentTable({ shipments, logoUrl }: { shipments: ShipmentRow[]; logoUrl: string | null }) {
   if (shipments.length === 0) return <EmptyHistory />;
 

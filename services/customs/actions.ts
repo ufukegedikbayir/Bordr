@@ -9,14 +9,11 @@ import { isProfileComplete } from "@/services/workspaces/profile";
 import { getCompanyProfile, isWorkspaceMember } from "@/services/workspaces/queries";
 
 import { COUNTRIES, type CustomsActionResult } from "./constants";
-import {
-  INCOTERMS,
-  INVOICE_COLUMNS,
-  invoiceFromRow,
-  regionName,
-  shipmentInputSchema,
-  type ShipmentFormValues,
-} from "./invoice";
+import { DOCUMENT_COLUMNS, documentsFromRow, type DocumentRow } from "./documents";
+import { adrDescription, packageTypeName } from "./freight";
+import { INCOTERMS, regionName } from "./invoice";
+import { createShipmentPayload } from "./payload";
+import { fieldErrorsFrom, shipmentInputSchema, type ShipmentFormValues } from "./shipment-input";
 
 // Google's newest Flash models are volatile under load (503s, stalls) and the
 // free tier rate-limits per model (429), so a second model is the retry and
@@ -36,7 +33,12 @@ Your job:
 1. Classify the goods: the most accurate 6-digit HS code and its category name (at most 6 words).
 2. Estimate the destination's import duty for these goods from this origin, as a percentage of customs value.
 3. List the documents customs and the carrier will strictly require for this shipment by road (e.g. Commercial Invoice, Packing List, CMR Consignment Note, Certificate of Origin, Export Declaration).
-4. Give up to 3 short compliance notes (one sentence each) only where something needs the exporter's attention: e.g. a preferential origin proof that could reduce duty, licences or restrictions for this product, an Incoterm that makes the exporter responsible for import duties and VAT, or declared weights or values that look implausible for the goods. Return an empty list if nothing stands out.
+4. Give up to 3 short compliance notes (one sentence each) only where something needs the exporter's attention, most important first:
+   - dangerous goods: the goods are likely dangerous goods under ADR but none are declared, or the declared UN number, class or packing group doesn't fit the goods;
+   - a preferential origin proof that could reduce duty, licences or restrictions for this product;
+   - an Incoterm that makes the exporter responsible for import duties and VAT;
+   - declared weights, values or package sizes that look implausible for the goods.
+   Return an empty list if nothing stands out.
 Return exact JSON.`;
 
 // The .describe() hints steer formatting; the normalizers below enforce it.
@@ -135,7 +137,7 @@ export async function generateCustomsData(
       ok: false,
       reason: "invalid",
       error: "Some shipment details need fixing.",
-      fieldErrors: z.flattenError(parsed.error).fieldErrors,
+      fieldErrors: fieldErrorsFrom(parsed.error),
     };
   }
   const input = parsed.data;
@@ -161,21 +163,29 @@ export async function generateCustomsData(
   }
 
   const incoterm = INCOTERMS.find(({ code }) => code === input.incoterm)!;
-  const total = input.quantity * input.unitPrice;
+  const { totals } = input;
+  const total = totals.quantity * input.unitPrice;
   const prompt = `Declared facts (JSON):
 ${JSON.stringify(
   {
     goods: description,
-    quantity: input.quantity,
+    quantity: totals.quantity,
     unitPrice: `${input.unitPrice.toFixed(2)} ${input.currency}`,
     totalValue: `${total.toFixed(2)} ${input.currency}`,
     countryOfOrigin: `${regionName(input.originCountry)} (${input.originCountry})`,
     exporterCountry: `${regionName(profile.countryCode!)} (${profile.countryCode})`,
     destinationCountry: `${destination.name} (${destination.code})`,
     incoterm: `${incoterm.code} (${incoterm.name}) ${input.incotermPlace}`,
-    packages: input.packageCount,
-    grossWeightKg: input.grossWeightKg,
-    netWeightKg: input.netWeightKg,
+    packages: input.packages.map((p) => ({
+      type: packageTypeName(p.packageType),
+      pieces: p.quantity,
+      netKg: p.netWeightKg,
+      grossKg: p.grossWeightKg,
+      dimensionsCm: `${p.lengthCm} x ${p.widthCm} x ${p.heightCm}`,
+    })),
+    totalGrossWeightKg: totals.grossWeightKg,
+    totalNetWeightKg: totals.netWeightKg,
+    dangerousGoods: input.dangerousGoods ? `ADR: ${adrDescription(input.dangerousGoods)}` : "None declared",
     transport: "Road",
   },
   null,
@@ -222,41 +232,29 @@ ${JSON.stringify(
       continue;
     }
 
-    // Persist before returning. The database adds the exporter snapshot and
-    // the invoice number. A failed save still returns the classification (the
-    // AI quota is spent) but no invoice, since an invoice needs its number.
-    const { data: row, error: insertError } = await supabase
-      .from("shipments")
-      .insert({
-        user_id: user.id,
-        workspace_id: workspaceId,
-        description,
-        country: data.country,
-        hs_code: data.hsCode,
-        hs_description: data.hsDescription,
-        estimated_duty: data.estimatedDuty,
-        documents: data.requiredDocuments,
-        quantity: input.quantity,
-        unit_price: input.unitPrice,
-        currency: input.currency,
-        incoterm: input.incoterm,
-        incoterm_place: input.incotermPlace,
-        country_of_origin: input.originCountry,
-        package_count: input.packageCount,
-        gross_weight_kg: input.grossWeightKg,
-        net_weight_kg: input.netWeightKg,
-        importer_name: input.consigneeName,
-        importer_address: input.consigneeAddress,
-        importer_tax_id: input.consigneeTaxId || null,
-      })
-      .select(INVOICE_COLUMNS)
-      .single();
+    // Persist before returning, in one transaction: the shipment, its carrier
+    // and its packages. The database computes the totals from the packages and
+    // adds the exporter snapshot and the invoice number. A failed save still
+    // returns the classification (the AI quota is spent) but no documents,
+    // since they need the saved number.
+    const { data: shipmentId, error: saveError } = await supabase.rpc(
+      "create_shipment",
+      createShipmentPayload(input, workspaceId, { ...data, description }),
+    );
 
-    if (insertError) {
-      console.error("[generateCustomsData] saving shipment failed:", insertError.code, insertError.message);
+    if (saveError || typeof shipmentId !== "string") {
+      console.error("[generateCustomsData] saving shipment failed:", saveError?.code, saveError?.message, saveError?.hint);
+      return { ok: true, data, documents: null };
     }
 
-    return { ok: true, data, invoice: row ? invoiceFromRow(row) : null };
+    const { data: row, error: readError } = await supabase
+      .from("shipments")
+      .select(DOCUMENT_COLUMNS)
+      .eq("id", shipmentId)
+      .single();
+    if (readError) console.error("[generateCustomsData] reading saved shipment failed:", readError.code, readError.message);
+
+    return { ok: true, data, documents: row ? documentsFromRow(row as unknown as DocumentRow) : null };
   }
 
   return { ok: false, error: AI_UNAVAILABLE };
