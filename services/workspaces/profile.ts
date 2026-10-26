@@ -85,9 +85,11 @@ export { tidy };
 
 // Letters in any script (\p{L}, with accents \p{M}), digits, and the
 // punctuation real names and addresses use. Emoji and symbols are excluded.
+// Addresses and cities need ":" and "/" too: Turkish addresses write the door
+// and flat as "No:2 D:11" and the district as "Kadıköy/İstanbul".
 const COMPANY_NAME = /^[\p{L}\p{N}][\p{L}\p{M}\p{N} .,'’&()/+-]*$/u;
-const ADDRESS = /^[\p{L}\p{N}][\p{L}\p{M}\p{N} .,'’()/#°º-]*$/u;
-const CITY = /^\p{L}[\p{L}\p{M}\p{N} .,'’()-]*$/u;
+const ADDRESS = /^[\p{L}\p{N}][\p{L}\p{M}\p{N} .,:'’()/#°º-]*$/u;
+const CITY = /^\p{L}[\p{L}\p{M}\p{N} .,:'’()/-]*$/u;
 const PERSON = /^\p{L}[\p{L}\p{M} .,'’-]*$/u;
 // 2–10 letters or digits, single spaces or dashes between them: 10115, SW1A 1AA, 1010-001.
 const POSTAL_CODE = /^[A-Z0-9]+(?:[ -][A-Z0-9]+)*$/;
