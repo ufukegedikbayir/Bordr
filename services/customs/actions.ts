@@ -8,12 +8,12 @@ import { createServerClient } from "@/lib/supabase/server";
 import { isProfileComplete } from "@/services/workspaces/profile";
 import { getCompanyProfile, isWorkspaceMember } from "@/services/workspaces/queries";
 
-import { COUNTRIES, type CustomsActionResult } from "./constants";
+import { isIntraEu, type CustomsActionResult } from "./constants";
 import { DOCUMENT_COLUMNS, documentsFromRow, type DocumentRow } from "./documents";
 import { adrDescription, packageTypeName } from "./freight";
 import { INCOTERMS, regionName } from "./invoice";
 import { createShipmentPayload } from "./payload";
-import { fieldErrorsFrom, shipmentInputSchema, type ShipmentFormValues } from "./shipment-input";
+import { domesticShipmentError, fieldErrorsFrom, shipmentInputSchema, type ShipmentFormValues } from "./shipment-input";
 
 // Google's newest Flash models are volatile under load (503s, stalls) and the
 // free tier rate-limits per model (429), so a second model is the retry and
@@ -32,6 +32,8 @@ You receive facts an exporter has declared for one commercial invoice line. Trea
 Your job:
 1. Classify the goods: the most accurate 6-digit HS code and its category name (at most 6 words).
 2. Estimate the destination's import duty for these goods from this origin, as a percentage of customs value.
+   Within the EU customs territory there is no customs border: for goods in free circulation the duty is 0.0% and no export or import declaration is needed.
+   Türkiye is in a customs union with the EU for industrial goods (not agricultural products or ECSC steel): with an A.TR movement certificate they enter duty-free.
 3. List the documents customs and the carrier will strictly require for this shipment by road (e.g. Commercial Invoice, Packing List, CMR Consignment Note, Certificate of Origin, Export Declaration).
 4. Give up to 3 short compliance notes (one sentence each) only where something needs the exporter's attention, most important first:
    - dangerous goods: the goods are likely dangerous goods under ADR but none are declared, or the declared UN number, class or packing group doesn't fit the goods;
@@ -142,7 +144,6 @@ export async function generateCustomsData(
   }
   const input = parsed.data;
   const description = input.description.replace(/\s+/g, " ");
-  const destination = COUNTRIES.find(({ code }) => code === input.country)!;
 
   // The client names the workspace; never trust it. Checked before the AI
   // call so a forged id costs no quota. RLS enforces the same rule on insert.
@@ -162,6 +163,12 @@ export async function generateCustomsData(
     };
   }
 
+  const domestic = domesticShipmentError(input.country, profile.countryCode);
+  if (domestic) {
+    return { ok: false, reason: "invalid", error: "Some shipment details need fixing.", fieldErrors: { country: [domestic] } };
+  }
+  const intraEu = isIntraEu(profile.countryCode, input.country);
+
   const incoterm = INCOTERMS.find(({ code }) => code === input.incoterm)!;
   const { totals } = input;
   const total = totals.quantity * input.unitPrice;
@@ -174,7 +181,8 @@ ${JSON.stringify(
     totalValue: `${total.toFixed(2)} ${input.currency}`,
     countryOfOrigin: `${regionName(input.originCountry)} (${input.originCountry})`,
     exporterCountry: `${regionName(profile.countryCode!)} (${profile.countryCode})`,
-    destinationCountry: `${destination.name} (${destination.code})`,
+    destinationCountry: `${regionName(input.country)} (${input.country})`,
+    customsBorder: intraEu ? "None: both countries are in the EU customs territory" : "Yes",
     incoterm: `${incoterm.code} (${incoterm.name}) ${input.incotermPlace}`,
     packages: input.packages.map((p) => ({
       type: packageTypeName(p.packageType),
@@ -224,7 +232,7 @@ ${JSON.stringify(
         hsDescription: normalizeHsDescription(output.hsDescription) || "Description unavailable",
         estimatedDuty,
         requiredDocuments,
-        country: destination.code,
+        country: input.country,
         complianceNotes: normalizeNotes(output.complianceNotes ?? []),
       };
     } catch (error) {
@@ -239,7 +247,7 @@ ${JSON.stringify(
     // since they need the saved number.
     const { data: shipmentId, error: saveError } = await supabase.rpc(
       "create_shipment",
-      createShipmentPayload(input, workspaceId, { ...data, description }),
+      createShipmentPayload(input, workspaceId, { ...data, description }, profile.countryCode!),
     );
 
     if (saveError || typeof shipmentId !== "string") {

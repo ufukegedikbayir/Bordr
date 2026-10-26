@@ -4,7 +4,7 @@ import { ArrowRight, PackageOpen } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils/cn";
-import { COUNTRIES } from "@/services/customs/constants";
+import { countryName } from "@/services/customs/constants";
 import { HISTORY_LIMIT, type ShipmentRow } from "@/services/shipments/queries";
 
 import { DocumentsMenu } from "./documents-menu";
@@ -81,7 +81,6 @@ function HsCode({ code }: { code: string }) {
 
 function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUrl: string | null }) {
   const created = new Date(shipment.created_at);
-  const destination = COUNTRIES.find(({ code }) => code === shipment.country);
 
   return (
     <tr className="border-b border-hairline transition-colors duration-150 last:border-0 hover:bg-ground/60">
@@ -101,9 +100,13 @@ function ShipmentTableRow({ shipment, logoUrl }: { shipment: ShipmentRow; logoUr
           {shipment.hs_description}
         </p>
       </td>
-      <td className={cn(CELL, "py-3 align-top whitespace-nowrap")}>
-        {destination?.name ?? shipment.country}
-        <span className="ml-1.5 text-xs text-ink-muted">{shipment.country}</span>
+      <td className={cn(CELL, "max-w-48 py-3 align-top")}>
+        <span className="flex items-baseline">
+          <span className="truncate" title={countryName(shipment.country)}>
+            {countryName(shipment.country)}
+          </span>
+          <span className="ml-1.5 shrink-0 text-xs text-ink-muted">{shipment.country}</span>
+        </span>
       </td>
       <td className={cn(CELL, "py-2.5 align-top")}>
         <HsCode code={shipment.hs_code} />

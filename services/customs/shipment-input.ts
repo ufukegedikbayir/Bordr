@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { collapse, collapseLines, isCleanLines, isCleanText, tidy, SYMBOLS_MESSAGE } from "@/lib/validation/text";
 
-import { COUNTRIES, MAX_DESCRIPTION_LENGTH, type CountryCode } from "./constants";
+import { DESTINATIONS, MAX_DESCRIPTION_LENGTH, type CountryCode } from "./constants";
 import {
   ADR_CLASSES,
   MAX_PACKAGES,
@@ -220,7 +220,7 @@ const takingOverDate = z.string().superRefine((value, ctx) => {
   if (offset > 90) ctx.addIssue({ code: "custom", message: "Use a date within the next 90 days." });
 });
 
-const destinationCodes = COUNTRIES.map(({ code }) => code) as [CountryCode, ...CountryCode[]];
+const destinationCodes = DESTINATIONS.map(({ code }) => code) as [CountryCode, ...CountryCode[]];
 const packageTypeCodes = PACKAGE_TYPES.map(({ code }) => code) as [PackageType, ...PackageType[]];
 const adrClassCodes = ADR_CLASSES.map(({ code }) => code) as [AdrClass, ...AdrClass[]];
 
@@ -400,6 +400,17 @@ export const shipmentInputSchema = z
 export type ShipmentInput = z.output<typeof shipmentInputSchema>;
 
 /** First message per dotted path, the shape the form renders. */
+/**
+ * The CMR Convention covers carriage between two countries only (Art. 1), so
+ * the destination can't be the exporter's own country. Checked apart from the
+ * schema, which doesn't know the exporter.
+ */
+export function domesticShipmentError(destination: string, exporterCountry: string | null): string | null {
+  return exporterCountry && destination === exporterCountry
+    ? "Choose a country other than your own. Bordr's documents are for cross-border shipments."
+    : null;
+}
+
 export function fieldErrorsFrom(error: z.ZodError): FieldErrors {
   const errors: FieldErrors = {};
   for (const issue of error.issues) {

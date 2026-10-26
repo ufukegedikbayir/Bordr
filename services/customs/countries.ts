@@ -1,7 +1,10 @@
 // English country names, fixed here rather than read from Intl.DisplayNames:
 // Node and browsers ship different ICU data, which broke hydration and would
 // let the same invoice print differently on the server and in the browser.
-// ISO 3166-1 alpha-2, plus XK (Kosovo), which customs systems use.
+// ISO 3166-1 alpha-2, plus XK (Kosovo), which customs systems use. Road
+// freight destinations (see DESTINATIONS) carry their ISO 3166-1 English
+// short names, minus the catalogue inversion: "Moldova", not "Moldova,
+// Republic of", so the name reads in a sentence and sorts where people look.
 // Sorted by name here, so pickers list them in one fixed order everywhere.
 export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   AF: "Afghanistan",
@@ -103,6 +106,7 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   GY: "Guyana",
   HT: "Haiti",
   HM: "Heard and McDonald Islands",
+  VA: "Holy See",
   HN: "Honduras",
   HK: "Hong Kong",
   HU: "Hungary",
@@ -240,13 +244,12 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   UG: "Uganda",
   UA: "Ukraine",
   AE: "United Arab Emirates",
-  GB: "United Kingdom",
-  US: "United States",
+  GB: "United Kingdom of Great Britain and Northern Ireland",
   UM: "United States Minor Outlying Islands",
+  US: "United States of America",
   UY: "Uruguay",
   UZ: "Uzbekistan",
   VU: "Vanuatu",
-  VA: "Vatican City",
   VE: "Venezuela",
   VN: "Vietnam",
   WF: "Wallis and Futuna",
