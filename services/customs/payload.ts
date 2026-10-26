@@ -1,7 +1,7 @@
 // The create_shipment payload: validated input plus the AI classification,
 // in the database's column names. Pure, so tests can run it against the
 // migration without the Server Action.
-import type { CustomsResult } from "./constants";
+import { isIntraEu, type CustomsResult } from "./constants";
 import { customsFormalities } from "./freight";
 import type { ShipmentInput } from "./shipment-input";
 
@@ -10,7 +10,13 @@ type Classification = Pick<CustomsResult, "hsCode" | "hsDescription" | "estimate
   description: string;
 };
 
-export function createShipmentPayload(input: ShipmentInput, workspaceId: string, classification: Classification) {
+export function createShipmentPayload(
+  input: ShipmentInput,
+  workspaceId: string,
+  classification: Classification,
+  /** The exporter's country, from the company profile. */
+  exporterCountry: string,
+) {
   const { transport, dangerousGoods, consignee } = input;
   return {
     shipment: {
@@ -38,7 +44,7 @@ export function createShipmentPayload(input: ShipmentInput, workspaceId: string,
       taking_over_date: transport.takingOverDate,
       delivery_place: input.deliveryPlace,
       // Stored resolved, so the CMR re-prints identically whatever the code does later.
-      sender_instructions: transport.senderInstructions ?? customsFormalities(input.incoterm),
+      sender_instructions: transport.senderInstructions ?? customsFormalities(input.incoterm, isIntraEu(exporterCountry, input.country)),
       adr_un_number: dangerousGoods?.unNumber ?? null,
       adr_shipping_name: dangerousGoods?.shippingName ?? null,
       adr_class: dangerousGoods?.hazardClass ?? null,

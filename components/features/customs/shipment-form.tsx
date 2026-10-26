@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { cn } from "@/lib/utils/cn";
 import type { Carrier } from "@/services/carriers/queries";
-import { COUNTRIES, EXAMPLE_PRODUCTS, MAX_DESCRIPTION_LENGTH } from "@/services/customs/constants";
+import { DESTINATIONS, EXAMPLE_PRODUCTS, MAX_DESCRIPTION_LENGTH, isIntraEu } from "@/services/customs/constants";
 import { ADR_CLASSES, PACKING_GROUPS, TUNNEL_CODES, customsFormalities } from "@/services/customs/freight";
 import { CURRENCIES, INCOTERMS, WORLD_COUNTRIES, type Incoterm } from "@/services/customs/invoice";
 import {
@@ -22,6 +22,8 @@ type ShipmentFormProps = {
   values: ShipmentFormValues;
   errors: FieldErrors;
   pending: boolean;
+  /** The exporter's country, from the company profile. */
+  exporterCountry: string | null;
   carriers: Carrier[];
   textareaRef: Ref<HTMLTextAreaElement>;
   onChange: (key: ScalarField, value: string) => void;
@@ -87,6 +89,7 @@ export function ShipmentForm({
   values,
   errors,
   pending,
+  exporterCountry,
   carriers,
   textareaRef,
   onChange,
@@ -270,7 +273,10 @@ export function ShipmentForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField path="country" label="Destination country" error={error("country")}>
                 <Select {...bind("country")}>
-                  {COUNTRIES.map(({ code, name }) => (
+                  <option value="" disabled>
+                    Choose a country
+                  </option>
+                  {DESTINATIONS.map(({ code, name }) => (
                     <option key={code} value={code}>
                       {name}
                     </option>
@@ -407,7 +413,7 @@ export function ShipmentForm({
               path="senderInstructions"
               label="Instructions for customs and the carrier"
               optional
-              hint={incoterm ? `Left blank, the CMR prints: “${customsFormalities(incoterm)}”` : "Choose an Incoterm to see the default."}
+              hint={incoterm ? `Left blank, the CMR prints: “${customsFormalities(incoterm, isIntraEu(exporterCountry, values.country))}”` : "Choose an Incoterm to see the default."}
               error={error("senderInstructions")}
             >
               <textarea

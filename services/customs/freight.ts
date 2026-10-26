@@ -111,7 +111,8 @@ export function freightPaymentTerms(incoterm: Incoterm): string {
  * CMR box 13 default, per CMR Art. 6(1)(j): who clears customs. Under EXW the
  * buyer clears export too; under DDP the seller clears import too.
  */
-export function customsFormalities(incoterm: Incoterm): string {
+export function customsFormalities(incoterm: Incoterm, intraEu = false): string {
+  if (intraEu) return "No customs formalities: carriage within the EU customs territory.";
   if (incoterm === "EXW") return "Export and import customs clearance by the consignee (EXW).";
   if (incoterm === "DDP") return "Export and import customs clearance by the sender, duties paid (DDP).";
   return `Export customs clearance by the sender. Import customs clearance by the consignee (${incoterm}).`;

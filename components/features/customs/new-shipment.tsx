@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 
 import type { Carrier } from "@/services/carriers/queries";
 import { generateCustomsData } from "@/services/customs/actions";
-import { COUNTRIES, type CountryCode } from "@/services/customs/constants";
+import type { CountryCode } from "@/services/customs/constants";
 import { regionName } from "@/services/customs/invoice";
 import {
   EMPTY_PACKAGE,
+  domesticShipmentError,
   fieldErrorsFrom,
   nextMarks,
   shipmentInputSchema,
@@ -36,14 +37,14 @@ function todayUtc() {
 }
 
 function initialValues(loadingPlace: string): ShipmentFormValues {
-  // Origin and Incoterm start blank on purpose: they're declarations the
+  // Origin, destination and Incoterm start blank on purpose: they're declarations the
   // exporter must make, not defaults to click past.
   return {
     description: "",
     unitPrice: "",
     currency: "EUR",
     originCountry: "",
-    country: COUNTRIES[0].code,
+    country: "",
     incoterm: "",
     incotermPlace: "",
     deliveryPlace: "",
@@ -208,7 +209,8 @@ export function NewShipment({
    */
   function validatePath(path: string) {
     const parsed = shipmentInputSchema.safeParse(values);
-    const message = parsed.success ? undefined : fieldErrorsFrom(parsed.error)[path];
+    const domestic = path === "country" ? domesticShipmentError(values.country, origin.countryCode) : null;
+    const message = (parsed.success ? undefined : fieldErrorsFrom(parsed.error)[path]) ?? (domestic ? [domestic] : undefined);
     // Only flag a field the user has filled: empty required fields wait for submit.
     const value = path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown>)?.[key], values);
     setErrors((current) => {
@@ -230,8 +232,9 @@ export function NewShipment({
 
     // Same schema the server enforces, for instant field-level feedback.
     const parsed = shipmentInputSchema.safeParse(values);
-    if (!parsed.success) {
-      showErrors(fieldErrorsFrom(parsed.error));
+    const domestic = domesticShipmentError(values.country, origin.countryCode);
+    if (!parsed.success || domestic) {
+      showErrors({ ...(parsed.success ? {} : fieldErrorsFrom(parsed.error)), ...(domestic && { country: [domestic] }) });
       return;
     }
 
@@ -265,6 +268,7 @@ export function NewShipment({
         values={values}
         errors={errors}
         pending={pending}
+        exporterCountry={origin.countryCode}
         carriers={carriers}
         textareaRef={textareaRef}
         onChange={updateField}

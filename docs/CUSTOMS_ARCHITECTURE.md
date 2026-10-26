@@ -258,15 +258,43 @@ A security definer function that runs in one transaction:
 | Documents | `CommercialInvoice`, `PackingList`, `CMRDocument`, `CertificateOfOrigin` | One component per document, built in the browser on click |
 | UI | `/shipments/new`, dashboard Documents menu | Input (packages, transport, ADR), downloads |
 
-## 6. Next phases
+
+## 6. Destinations
+
+`DESTINATIONS` in `services/customs/constants.ts`: 50 countries, alphabetical.
+They cover the 27 EU member states, the rest of geographic Europe, the
+Caucasus states on the TIR routes (Armenia, Azerbaijan, Georgia), Türkiye,
+the UK, the US and Canada.
+
+- **Names.** One table, `services/customs/countries.ts`, feeds every picker and
+  PDF. Destinations carry their ISO 3166-1 English short names, minus ISO's
+  catalogue inversions (so "Moldova", not "Moldova, Republic of"). Kosovo
+  uses the user-assigned code XK, as customs systems do.
+- **Russia and Belarus** are left out. EU sanctions bar most road freight to
+  them, and Bordr doesn't screen against sanctions lists.
+- **Cross-border only.** The CMR Convention applies to carriage between two
+  countries (Art. 1). The form and the Server Action refuse a destination
+  equal to the exporter's country.
+- **Inside the EU customs territory** (the member states plus Monaco):
+  - The default CMR instruction reads "No customs formalities".
+  - The AI is told there's no customs border, so duty is 0.0% for goods in
+    free circulation.
+- **Türkiye.** The EU–Türkiye customs union covers industrial goods only. The
+  AI prompt names the A.TR movement certificate for them.
+- **Other pickers.** The profile, origin and carrier country pickers keep the
+  full ISO list: goods and carriers come from anywhere.
+## 7. Next phases
 
 - **Multi-line goods:**
   - `shipment_lines` (description, HS code, origin, quantity, unit price).
   - `shipment_package_contents (package_id, line_id, quantity)`.
   - AI classification per line.
   - Invoice and packing list with one row per line.
-- **Destination coverage.** Road freight needs European destinations (EU,
-  Switzerland, UK, Türkiye, Balkans); the current list is US, GB, DE and CA.
+- **Sanctions screening** (consignee and goods) before destinations such as
+  Russia or Belarus can be offered.
+- **EU customs territory exceptions** (Canary Islands, Ceuta and Melilla,
+  Heligoland and others): today every address in a member state is treated as
+  inside the territory.
 - **ADR completeness:** see the "not covered" list under Dangerous goods above.
 - **e-CMR** (Additional Protocol, 2008) once carriers in the network accept it.
 - **Preferential origin:** REX statement on origin, EUR.1.

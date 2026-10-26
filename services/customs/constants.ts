@@ -1,23 +1,47 @@
 // Shared by the customs Server Action and the UI. Kept out of actions.ts
 // because a "use server" module may only export async functions.
 
+import { COUNTRY_NAMES } from "./countries";
 import type { ShipmentDocuments } from "./documents";
 
-export const COUNTRIES = [
-  { code: "US", name: "United States" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "DE", name: "Germany" },
-  { code: "CA", name: "Canada" },
+/** EU member states: one customs territory, so no customs border between them. */
+export const EU_MEMBER_STATES = [
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+  "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
 ] as const;
 
-export type CountryCode = (typeof COUNTRIES)[number]["code"];
+// Where Bordr ships to by road: the EU, the rest of geographic Europe and the
+// Caucasus on the TIR routes, Türkiye, plus the US and Canada from before.
+// Russia and Belarus are left out: EU sanctions bar most road freight to
+// them, and Bordr doesn't screen goods against sanctions lists.
+const DESTINATION_CODES = [
+  ...EU_MEMBER_STATES,
+  "AL", "AD", "AM", "AZ", "BA", "CH", "GB", "GE", "IS", "LI", "MC", "MD", "ME", "MK",
+  "NO", "RS", "SM", "TR", "UA", "VA", "XK",
+  "US", "CA",
+] as const;
+
+export type CountryCode = (typeof DESTINATION_CODES)[number];
+
+const destinationSet: ReadonlySet<string> = new Set(DESTINATION_CODES);
+
+/** Destination countries, alphabetical by English name (the order of COUNTRY_NAMES). */
+export const DESTINATIONS = Object.entries(COUNTRY_NAMES)
+  .filter(([code]) => destinationSet.has(code))
+  .map(([code, name]) => ({ code: code as CountryCode, name }));
 
 export function isCountryCode(code: string): code is CountryCode {
-  return COUNTRIES.some((country) => country.code === code);
+  return destinationSet.has(code);
 }
 
-export function countryName(code: CountryCode): string {
-  return COUNTRIES.find((country) => country.code === code)?.name ?? code;
+export function countryName(code: string): string {
+  return COUNTRY_NAMES[code] ?? code;
+}
+
+/** Both ends inside the EU customs territory (Monaco included, via France). */
+export function isIntraEu(from: string | null, to: string): boolean {
+  const inside = (code: string | null) => code === "MC" || EU_MEMBER_STATES.some((c) => c === code);
+  return inside(from) && inside(to);
 }
 
 export const MAX_DESCRIPTION_LENGTH = 500;
