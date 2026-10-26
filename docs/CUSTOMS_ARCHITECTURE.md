@@ -69,6 +69,10 @@ Omitting the 6(1)(k) statement makes the carrier liable for all resulting loss
 - **One note per vehicle** (Art. 5(2)): a shipment is one vehicle. Payload is
   limited to 30 t and 120 m³, so heavier loads must be split into shipments.
 - The box layout follows the IRU model form (boxes 1–24) that border officers know.
+- **Boxes 6–12** have one row per line and package type, with the line's
+  description and HS code. A load that would need more than 8 rows is printed
+  as one summary row referring to the packing list, which box 5 lists as
+  attached, so each original stays one page.
 - **Freight payment (box 14), derived from Incoterms® 2020.** Under EXW and FCA
   the buyer contracts the main carriage, so it's *carriage forward*. Under CPT,
   CIP, DAP, DPU and DDP the seller pays, so it's *carriage paid*.
@@ -132,11 +136,12 @@ carriers and consignees expect the following, and Bordr prints all of it:
   These equal the invoice and CMR exactly, because the database computes them.
 - The ADR line, where applicable.
 
-**HS mapping per pallet.** Each package row carries the HS code of the goods it
-contains. A shipment has one goods line today, so every package carries that
-line's code. The schema keeps package contents separate from packages, so
-multi-line shipments can add `shipment_package_contents (package_id, line_id,
-quantity)` without changing the documents' structure (see *Next phases*).
+**HS mapping per pallet.** Each package carries one invoice line's goods
+(`shipment_packages.line_position`), and its row prints that line's item
+number, description and HS code. Each line's quantity and weights are the sums
+of its packages, so the invoice, packing list, CMR and certificate of origin
+agree line by line. Mixed pallets (several lines on one pallet) need
+`shipment_package_contents` (see *Next phases*).
 
 ## 3. Certificate of origin (non-preferential)
 
@@ -154,7 +159,11 @@ originated in a specific country or area.
 - The certificate and its application must be completed identically, on
   210 × 297 mm forms.
 - The origin may be stated as the European Union, an EU member state or a third
-  country. Bordr uses the declared country of origin, the same as on the invoice.
+  country. Bordr uses each line's declared country of origin, the same as on
+  the invoice.
+- A certificate states one country of origin. A shipment whose lines come from
+  several countries gets one application per country (`COO-…-1`, `-2`), each
+  listing that country's lines under their invoice item numbers.
 
 **What Bordr produces.** Only the issuing authority (a chamber of commerce) can
 issue the certificate, on its official form or e-CO system. Bordr therefore
@@ -214,6 +223,31 @@ Group constraints:
 - Shipments created before this phase keep working: they only ever have the
   invoice.
 
+### `shipment_lines`: one row per invoice line (migration `20261028000000_shipment_lines.sql`)
+
+Phase 8.2 moved the goods off `shipments`. The single-line columns
+(`description`, `hs_code`, `hs_description`, `estimated_duty`, `quantity`,
+`unit_price`, `country_of_origin`) were copied to line 1 of every existing
+shipment and then dropped.
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `shipment_id`, `workspace_id` | uuid | Composite FK → `shipments (id, workspace_id)`, on delete cascade |
+| `position` | smallint | Item number, 1–30, unique per shipment |
+| `description` | text | 1–500 |
+| `hs_code` | text | `^[0-9]{4}\.[0-9]{2}$` |
+| `hs_description`, `estimated_duty` | text | From the AI classification |
+| `quantity` | integer | Sum of the line's packages |
+| `unit_price` | numeric(14,2) | > 0 |
+| `origin_country` | text | ISO alpha-2, not `EU` |
+| `net_weight_kg`, `gross_weight_kg` | numeric(12,3) | Sums of the line's packages |
+
+- The five invoice facts are all present or all absent. Lines copied from
+  Phase 5 shipments have a classification only.
+- **RLS:** members can view; `create_shipment` is the only writer.
+- Clients can no longer insert into `shipments` directly, so no invoice can
+  exist without lines.
+
 ### `shipment_packages`: one row per pallet or package
 
 | Column | Type | Rule |
@@ -223,6 +257,7 @@ Group constraints:
 | `position` | smallint | 1–99, unique per shipment |
 | `package_type` | text | `eur_pallet`, `pallet`, `crate`, `carton`, `drum`, `ibc`, `bag`, `other` |
 | `marks` | text | 1–60, `is_clean_text` |
+| `line_position` | smallint | FK → `shipment_lines (shipment_id, position)`: the line it carries |
 | `quantity` | integer | 1–1,000,000 pcs |
 | `net_weight_kg`, `gross_weight_kg` | numeric(12,3) | > 0, net ≤ gross |
 | `length_cm` | integer | 1–1,400 (a semi-trailer is 13.6 m) |
@@ -234,29 +269,32 @@ Group constraints:
   their shipment, so an issued document can't be changed afterwards through the
   API.
 
-### `public.create_shipment(shipment jsonb, packages jsonb) → uuid`
+### `public.create_shipment(shipment jsonb, lines jsonb, packages jsonb) → uuid`
 
 A security definer function that runs in one transaction:
 
 1. Requires a session and membership of the target workspace.
-2. Validates 1–99 packages, and the payload limits of 30,000 kg and 120 m³.
-3. **Computes** `quantity`, `package_count`, `gross_weight_kg` and
-   `net_weight_kg` from the packages.
-4. Upserts the carrier and snapshots it onto the shipment.
-5. Inserts the shipment. The Phase 6.5 trigger adds the exporter snapshot and
+2. Validates 1–30 lines and 1–99 packages. Every package names an existing
+   line, and every line has at least one package.
+3. Enforces the payload limits of 30,000 kg and 120 m³.
+4. **Computes** `package_count` and the shipment's weights, and each line's
+   quantity and weights, from the packages.
+5. Upserts the carrier and snapshots it onto the shipment.
+6. Inserts the shipment. The Phase 6.5 trigger adds the exporter snapshot and
    the invoice number.
-6. Inserts the packages and returns the shipment id.
+7. Inserts the lines, then the packages, and returns the shipment id.
 
 ## 5. Application layers
 
 | Layer | File | Responsibility |
 | --- | --- | --- |
-| Shared schema | `services/customs/invoice.ts` | Shipment input (Zod), package and transport rules, Incoterm-derived clearance and freight terms, document data mapping |
-| Server Action | `services/customs/actions.ts` | Auth, membership, profile check; AI classification and ADR plausibility review; `create_shipment` |
+| Shared schema | `services/customs/shipment-input.ts` | Shipment input (Zod): lines, packages, transport, ADR |
+| Document data | `services/customs/invoice.ts`, `documents.ts`, `freight.ts` | Row → document mapping, Incoterm-derived clearance and freight terms |
+| Server Action | `services/customs/actions.ts` | Auth, membership, profile check; AI classification of every line in one call (matched by item number) and ADR plausibility review; `create_shipment` |
 | Documents query | `services/shipments/actions.ts` | `getShipmentDocuments(id)` under RLS |
 | PDF kit | `components/features/customs/pdf/` | Fonts, tokens, numbered-box primitives shared by all four documents |
 | Documents | `CommercialInvoice`, `PackingList`, `CMRDocument`, `CertificateOfOrigin` | One component per document, built in the browser on click |
-| UI | `/shipments/new`, dashboard Documents menu | Input (packages, transport, ADR), downloads |
+| UI | `/shipments/new`, dashboard Documents menu | Input (items, packages, transport, ADR), downloads |
 
 
 ## 6. Destinations
@@ -285,11 +323,10 @@ the UK, the US and Canada.
   full ISO list: goods and carriers come from anywhere.
 ## 7. Next phases
 
-- **Multi-line goods:**
-  - `shipment_lines` (description, HS code, origin, quantity, unit price).
-  - `shipment_package_contents (package_id, line_id, quantity)`.
-  - AI classification per line.
-  - Invoice and packing list with one row per line.
+- **Mixed pallets:** `shipment_package_contents (package_id, line_id,
+  quantity)`, so one pallet can carry several lines. Today each package
+  carries exactly one.
+- **ADR per line:** the dangerous-goods entry is still one per shipment.
 - **Sanctions screening** (consignee and goods) before destinations such as
   Russia or Belarus can be offered.
 - **EU customs territory exceptions** (Canary Islands, Ceuta and Melilla,

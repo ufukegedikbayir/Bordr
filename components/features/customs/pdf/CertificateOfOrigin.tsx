@@ -2,7 +2,7 @@ import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 import { packageGroups, type ShipmentDocuments } from "@/services/customs/documents";
 import { documentNumber, packageTypeName } from "@/services/customs/freight";
-import { regionName } from "@/services/customs/invoice";
+import { originCountries, regionName } from "@/services/customs/invoice";
 
 import { BORDER, Box, DocumentHeader, Footer, HAIRLINE, MUTED, Party, RULE, formatDate, integer, kilograms, kit } from "./kit";
 
@@ -28,6 +28,8 @@ const s = StyleSheet.create({
   cItems: { flex: 1 },
   cQty: { width: 130 },
   itemRow: { flexDirection: "row" },
+  itemDivider: { borderTopWidth: 0.5, borderTopColor: HAIRLINE },
+  lastItem: { flexGrow: 1 },
   item: { flexDirection: "row" },
   itemNo: { width: 16, fontWeight: 600 },
   itemBody: { flex: 1 },
@@ -52,129 +54,174 @@ function lowerFirst(name: string) {
  * The exporter's application for a non-preferential certificate of origin,
  * with the standard boxes 1–7 filled in. Only the issuing authority (a chamber
  * of commerce) can certify it, in box 8: until then it is not a certificate.
+ *
+ * A certificate states one country of origin (box 3), so a shipment whose
+ * items come from several countries gets one application per country, each
+ * listing that country's items under their invoice item numbers.
  */
 export function CertificateOfOrigin({ data }: { data: ShipmentDocuments }) {
+  const { invoice } = data;
+  const origins = originCountries(invoice);
+  const base = documentNumber(invoice.invoiceNumber, "COO");
+
+  return (
+    <Document title={`Certificate of origin application ${base}`} author={invoice.exporter.name} subject="Certificate of origin">
+      {origins.map((origin, i) => (
+        <OriginApplication
+          key={origin}
+          data={data}
+          origin={origin}
+          number={origins.length > 1 ? `${base}-${i + 1}` : base}
+          part={origins.length > 1 ? { n: i + 1, of: origins.length } : null}
+        />
+      ))}
+    </Document>
+  );
+}
+
+function OriginApplication({
+  data,
+  origin,
+  number,
+  part,
+}: {
+  data: ShipmentDocuments;
+  origin: string;
+  number: string;
+  part: { n: number; of: number } | null;
+}) {
   const { invoice, packages, transport } = data;
-  const number = documentNumber(invoice.invoiceNumber, "COO");
-  const groups = packageGroups(packages);
-  const originName = regionName(invoice.originCountry);
+  const lines = invoice.lines.filter((line) => line.originCountry === origin);
+  const originName = regionName(origin);
   const issued = formatDate(invoice.issuedAt);
 
   return (
-    <Document title={`Certificate of origin application ${number}`} author={invoice.exporter.name} subject="Certificate of origin">
-      <Page size="A4" style={kit.page}>
-        <DocumentHeader
-          title="CERTIFICATE OF ORIGIN"
-          subtitle="Application · Non-preferential origin"
-          numberLabel="Application no."
-          number={number}
-        />
+    <Page size="A4" style={kit.page}>
+      <DocumentHeader
+        title="CERTIFICATE OF ORIGIN"
+        subtitle="Application · Non-preferential origin"
+        numberLabel="Application no."
+        number={number}
+      />
 
-        <Text style={s.notice}>
-          <Text style={kit.strong}>Application, not yet a certificate. </Text>
-          It becomes a certificate of origin only when the issuing authority (chamber of commerce) certifies it in box 8, on
-          its official form or electronic system. Box 8 is reserved for that authority.
-        </Text>
+      <Text style={s.notice}>
+        <Text style={kit.strong}>Application, not yet a certificate. </Text>
+        It becomes a certificate of origin only when the issuing authority (chamber of commerce) certifies it in box 8, on
+        its official form or electronic system. Box 8 is reserved for that authority.
+        {part ? ` One application per country of origin: this is ${part.n} of ${part.of}.` : ""}
+      </Text>
 
-        <View style={s.frame}>
-          <View style={[kit.row, kit.rowRule]}>
-            <Box n={1} label="Consignor" style={[s.left, s.minParty, kit.colRule]}>
-              <Party party={{ ...invoice.exporter, ids: [["EORI", invoice.exporter.eori], ["VAT", invoice.exporter.taxId]] }} />
-            </Box>
-            <Box n={3} label="Country of origin" style={[s.right, s.minParty]}>
-              <Text style={s.origin}>{originName.toUpperCase()}</Text>
-              <Text style={s.originCode}>ISO code {invoice.originCountry}</Text>
-            </Box>
+      <View style={s.frame}>
+        <View style={[kit.row, kit.rowRule]}>
+          <Box n={1} label="Consignor" style={[s.left, s.minParty, kit.colRule]}>
+            <Party party={{ ...invoice.exporter, ids: [["EORI", invoice.exporter.eori], ["VAT", invoice.exporter.taxId]] }} />
+          </Box>
+          <Box n={3} label="Country of origin" style={[s.right, s.minParty]}>
+            <Text style={s.origin}>{originName.toUpperCase()}</Text>
+            <Text style={s.originCode}>ISO code {origin}</Text>
+          </Box>
+        </View>
+
+        <View style={[kit.row, kit.rowRule]}>
+          <Box n={2} label="Consignee" style={[s.left, s.minParty, kit.colRule]}>
+            <Party party={invoice.consignee} />
+          </Box>
+          <Box n={4} label="Transport details (optional)" style={[s.right, s.minParty]}>
+            <Text style={kit.value}>By road</Text>
+            {transport ? (
+              <>
+                <Text style={kit.line}>
+                  Vehicle {transport.vehicleRegistration}
+                  {transport.trailerRegistration ? ` / ${transport.trailerRegistration}` : ""}
+                </Text>
+                <Text style={kit.line}>From {transport.takingOverPlace}</Text>
+                <Text style={kit.line}>To {transport.deliveryPlace}, {regionName(invoice.destination)}</Text>
+                <Text style={kit.line}>CMR {documentNumber(invoice.invoiceNumber, "CMR")}</Text>
+              </>
+            ) : (
+              <Text style={kit.line}>To {regionName(invoice.destination)}</Text>
+            )}
+          </Box>
+        </View>
+
+        <View style={kit.rowRule}>
+          <Box n={5} label="Remarks (optional)">
+            <Text style={kit.line}>
+              Commercial invoice {invoice.invoiceNumber} of {issued}
+              {part ? `, ${lines.length === 1 ? "item" : "items"} ${lines.map((line) => line.position).join(", ")}` : ""}. Packing list{" "}
+              {documentNumber(invoice.invoiceNumber, "PL")}.
+            </Text>
+          </Box>
+        </View>
+
+        <View style={kit.rowRule}>
+          <View style={s.goodsHead}>
+            <Box n={6} label="Item number; marks, numbers, number and kind of packages; description of goods" style={[s.cItems, kit.colRule]} />
+            <Box n={7} label="Quantity" style={s.cQty} />
           </View>
-
-          <View style={[kit.row, kit.rowRule]}>
-            <Box n={2} label="Consignee" style={[s.left, s.minParty, kit.colRule]}>
-              <Party party={invoice.consignee} />
-            </Box>
-            <Box n={4} label="Transport details (optional)" style={[s.right, s.minParty]}>
-              <Text style={kit.value}>By road</Text>
-              {transport ? (
-                <>
-                  <Text style={kit.line}>
-                    Vehicle {transport.vehicleRegistration}
-                    {transport.trailerRegistration ? ` / ${transport.trailerRegistration}` : ""}
-                  </Text>
-                  <Text style={kit.line}>From {transport.takingOverPlace}</Text>
-                  <Text style={kit.line}>To {transport.deliveryPlace}, {regionName(invoice.destination)}</Text>
-                  <Text style={kit.line}>CMR {documentNumber(invoice.invoiceNumber, "CMR")}</Text>
-                </>
-              ) : (
-                <Text style={kit.line}>To {regionName(invoice.destination)}</Text>
-              )}
-            </Box>
-          </View>
-
-          <View style={kit.rowRule}>
-            <Box n={5} label="Remarks (optional)">
-              <Text style={kit.line}>
-                Commercial invoice {invoice.invoiceNumber} of {issued}. Packing list {documentNumber(invoice.invoiceNumber, "PL")}.
-              </Text>
-            </Box>
-          </View>
-
-          <View style={kit.rowRule}>
-            <View style={s.goodsHead}>
-              <Box n={6} label="Item number; marks, numbers, number and kind of packages; description of goods" style={[s.cItems, kit.colRule]} />
-              <Box n={7} label="Quantity" style={s.cQty} />
-            </View>
-            <View style={[s.itemRow, s.minGoods]}>
-              <View style={[s.cItems, kit.box, kit.colRule]}>
-                <View style={s.item}>
-                  <Text style={s.itemNo}>1</Text>
-                  <View style={s.itemBody}>
-                    <Text style={kit.strong}>{invoice.line.description}</Text>
-                    <Text style={kit.line}>HS {invoice.line.hsCode}</Text>
-                    {groups.map((group) => (
-                      <Text key={group.packageType} style={kit.line}>
-                        {integer.format(group.count)} {lowerFirst(packageTypeName(group.packageType, group.count))}, marks{" "}
-                        {group.marks.length > 4 ? `${group.marks[0]} to ${group.marks[group.marks.length - 1]}` : group.marks.join(", ")}
-                      </Text>
-                    ))}
+          <View style={s.minGoods}>
+            {lines.map((line, i) => (
+              // The last row stretches, so box 6's column rule runs to the bottom of the goods area.
+              <View
+                key={line.position}
+                style={[s.itemRow, i > 0 ? s.itemDivider : {}, i === lines.length - 1 ? s.lastItem : {}]}
+                wrap={false}
+              >
+                <View style={[s.cItems, kit.box, kit.colRule]}>
+                  <View style={s.item}>
+                    <Text style={s.itemNo}>{line.position}</Text>
+                    <View style={s.itemBody}>
+                      <Text style={kit.strong}>{line.description}</Text>
+                      <Text style={kit.line}>HS {line.hsCode}</Text>
+                      {packageGroups(packages.filter((p) => p.line === line.position)).map((group) => (
+                        <Text key={group.packageType} style={kit.line}>
+                          {integer.format(group.count)} {lowerFirst(packageTypeName(group.packageType, group.count))}, marks{" "}
+                          {group.marks.length > 4 ? `${group.marks[0]} to ${group.marks[group.marks.length - 1]}` : group.marks.join(", ")}
+                        </Text>
+                      ))}
+                    </View>
                   </View>
                 </View>
+                <View style={[s.cQty, kit.box]}>
+                  <Text style={kit.strong}>{integer.format(line.quantity)} pcs</Text>
+                  <Text style={kit.line}>Gross {kilograms.format(line.grossWeightKg)} kg</Text>
+                  <Text style={kit.line}>Net {kilograms.format(line.netWeightKg)} kg</Text>
+                </View>
               </View>
-              <View style={[s.cQty, kit.box]}>
-                <Text style={kit.strong}>{integer.format(invoice.line.quantity)} pcs</Text>
-                <Text style={kit.line}>Gross {kilograms.format(invoice.grossWeightKg)} kg</Text>
-                <Text style={kit.line}>Net {kilograms.format(invoice.netWeightKg)} kg</Text>
+            ))}
+          </View>
+        </View>
+
+        <View style={kit.rowRule} wrap={false}>
+          <Box label="Application and declaration by the exporter">
+            <Text style={s.declaration}>
+              The undersigned, acting for the consignor named in box 1, declares that the goods described above originate in{" "}
+              <Text style={kit.strong}>{originName}</Text>, that the particulars given are true and correct, and applies for a certificate of origin for them.
+            </Text>
+            <View style={s.signRow}>
+              <View style={s.signCell}>
+                <Text style={kit.label}>Name and title</Text>
+                <Text style={kit.value}>
+                  {invoice.signatory.name}
+                  {invoice.signatory.title ? `, ${invoice.signatory.title}` : ""}
+                </Text>
+              </View>
+              <View style={s.signCell}>
+                <Text style={kit.label}>Place and date</Text>
+                <Text style={kit.value}>
+                  {transport ? `${transport.takingOverPlace}, ` : ""}
+                  {issued}
+                </Text>
+              </View>
+              <View style={s.signCell}>
+                <Text style={kit.label}>Signature and company stamp</Text>
+                <View style={kit.signLine} />
               </View>
             </View>
-          </View>
+          </Box>
+        </View>
 
-          <View style={kit.rowRule}>
-            <Box label="Application and declaration by the exporter">
-              <Text style={s.declaration}>
-                The undersigned, acting for the consignor named in box 1, declares that the goods described above originate in{" "}
-                <Text style={kit.strong}>{originName}</Text>, that the particulars given are true and correct, and applies for a certificate of origin for them.
-              </Text>
-              <View style={s.signRow}>
-                <View style={s.signCell}>
-                  <Text style={kit.label}>Name and title</Text>
-                  <Text style={kit.value}>
-                    {invoice.signatory.name}
-                    {invoice.signatory.title ? `, ${invoice.signatory.title}` : ""}
-                  </Text>
-                </View>
-                <View style={s.signCell}>
-                  <Text style={kit.label}>Place and date</Text>
-                  <Text style={kit.value}>
-                    {transport ? `${transport.takingOverPlace}, ` : ""}
-                    {issued}
-                  </Text>
-                </View>
-                <View style={s.signCell}>
-                  <Text style={kit.label}>Signature and company stamp</Text>
-                  <View style={kit.signLine} />
-                </View>
-              </View>
-            </Box>
-          </View>
-
+        <View wrap={false}>
           <Box n={8} label="Reserved for the issuing authority" style={s.authority}>
             <Text style={s.reserved}>To be completed by the chamber of commerce. Leave blank.</Text>
             <View style={s.authorityLines}>
@@ -184,9 +231,9 @@ export function CertificateOfOrigin({ data }: { data: ShipmentDocuments }) {
             </View>
           </Box>
         </View>
+      </View>
 
-        <Footer left={`${number} · Application, not valid until certified · ${invoice.exporter.name}`} />
-      </Page>
-    </Document>
+      <Footer left={`${number} · Application, not valid until certified · ${invoice.exporter.name}`} />
+    </Page>
   );
 }

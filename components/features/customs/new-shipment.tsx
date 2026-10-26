@@ -7,12 +7,14 @@ import { generateCustomsData } from "@/services/customs/actions";
 import type { CountryCode } from "@/services/customs/constants";
 import { regionName } from "@/services/customs/invoice";
 import {
+  EMPTY_LINE,
   EMPTY_PACKAGE,
   domesticShipmentError,
   fieldErrorsFrom,
   nextMarks,
   shipmentInputSchema,
   type FieldErrors,
+  type LineField,
   type PackageField,
   type PackageFormValues,
   type ScalarField,
@@ -40,10 +42,8 @@ function initialValues(loadingPlace: string): ShipmentFormValues {
   // Origin, destination and Incoterm start blank on purpose: they're declarations the
   // exporter must make, not defaults to click past.
   return {
-    description: "",
-    unitPrice: "",
+    lines: [{ ...EMPTY_LINE }],
     currency: "EUR",
-    originCountry: "",
     country: "",
     incoterm: "",
     incotermPlace: "",
@@ -109,7 +109,7 @@ export function NewShipment({
     if (!focusRequest) return;
     const container = containerRef.current;
     const target =
-      container?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+      container?.querySelector<HTMLElement>('[aria-invalid="true"], [id^="shipment-lines-"][role="alert"]') ??
       container?.querySelector<HTMLElement>("#shipment-packages-error");
     target?.focus();
     target?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -158,6 +158,42 @@ export function NewShipment({
     clearErrors((path) => path.startsWith("carrier"));
   }
 
+  const lineHandlers = {
+    onChange(index: number, field: LineField, value: string) {
+      setValues((current) => ({
+        ...current,
+        lines: current.lines.map((line, i) => (i === index ? { ...line, [field]: value } : line)),
+      }));
+      clearErrors((path) => path === `lines.${index}.${field}` || path === "lines");
+    },
+    onAdd() {
+      setValues((current) => {
+        // A new item usually shares the last one's origin.
+        const last = current.lines.at(-1);
+        return { ...current, lines: [...current.lines, { ...EMPTY_LINE, originCountry: last?.originCountry ?? "" }] };
+      });
+      clearErrors((path) => path === "lines");
+    },
+    onRemove(index: number) {
+      setValues((current) => {
+        if (current.lines.length === 1) return current;
+        const lines = current.lines.filter((_, i) => i !== index);
+        const removed = String(index + 1);
+        // Packages of the removed item need a new one: the only item left, or
+        // the user's choice. Later items move up one number.
+        // With one item left, the picker disappears, so every package carries it.
+        const packages = current.packages.map((p) => {
+          if (lines.length === 1) return { ...p, line: "1" };
+          if (p.line === removed) return { ...p, line: "" };
+          const n = Number(p.line);
+          return n > index + 1 ? { ...p, line: String(n - 1) } : p;
+        });
+        return { ...current, lines, packages };
+      });
+      clearErrors((path) => path.startsWith("lines") || path.endsWith(".line"));
+    },
+  };
+
   const packageHandlers = {
     onChange(index: number, field: PackageField, value: string) {
       setValues((current) => ({
@@ -179,7 +215,7 @@ export function NewShipment({
       setValues((current) => {
         const last = current.packages.at(-1);
         const added: PackageFormValues = last
-          ? { ...EMPTY_PACKAGE, packageType: last.packageType, lengthCm: last.lengthCm, widthCm: last.widthCm, marks: uniqueMarks(last.marks, current.packages) }
+          ? { ...EMPTY_PACKAGE, line: last.line, packageType: last.packageType, lengthCm: last.lengthCm, widthCm: last.widthCm, marks: uniqueMarks(last.marks, current.packages) }
           : { ...EMPTY_PACKAGE, marks: "1" };
         return { ...current, packages: [...current.packages, added] };
       });
@@ -275,6 +311,7 @@ export function NewShipment({
         onPickCarrier={pickCarrier}
         onSubmit={handleSubmit}
         onBlurField={validatePath}
+        lines={{ ...lineHandlers, onBlurField: validatePath }}
         packages={{ ...packageHandlers, onBlurField: validatePath }}
       />
       <div className="xl:sticky xl:top-6">

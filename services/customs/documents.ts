@@ -11,6 +11,8 @@ import { INVOICE_COLUMNS, invoiceFromRow, type InvoiceData, type InvoiceRow } fr
 
 export type PackageData = {
   position: number;
+  /** The invoice line (item number) whose goods the package carries. */
+  line: number;
   packageType: PackageType;
   marks: string;
   quantity: number;
@@ -59,12 +61,13 @@ export function availableDocuments(docs: ShipmentDocuments): DocumentKind[] {
 }
 
 export const PACKAGE_COLUMNS =
-  "position, package_type, marks, quantity, net_weight_kg, gross_weight_kg, length_cm, width_cm, height_cm";
+  "position, line_position, package_type, marks, quantity, net_weight_kg, gross_weight_kg, length_cm, width_cm, height_cm";
 
 export const DOCUMENT_COLUMNS = `${INVOICE_COLUMNS}, carrier_name, carrier_address, carrier_country, vehicle_registration, trailer_registration, taking_over_place, taking_over_date, delivery_place, sender_instructions, adr_un_number, adr_shipping_name, adr_class, adr_packing_group, adr_tunnel_code, shipment_packages (${PACKAGE_COLUMNS})`;
 
 type PackageRow = {
   position: number;
+  line_position: number;
   package_type: PackageType;
   marks: string;
   quantity: number;
@@ -134,6 +137,7 @@ export function documentsFromRow(row: DocumentRow): ShipmentDocuments | null {
     .map(
       (p): PackageData => ({
         position: p.position,
+        line: p.line_position,
         packageType: p.package_type,
         marks: p.marks,
         quantity: p.quantity,
@@ -154,12 +158,16 @@ export function packageVolumeM3(p: Pick<PackageData, "lengthCm" | "widthCm" | "h
   return (p.lengthCm * p.widthCm * p.heightCm) / 1_000_000;
 }
 
-/** Packages grouped by type, in first-appearance order (CMR boxes 6–12). */
+/** Packages grouped by line and type, ordered by line, then first appearance (CMR boxes 6–12). */
 export function packageGroups(packages: PackageData[]) {
-  const groups = new Map<PackageType, PackageData[]>();
-  for (const p of packages) groups.set(p.packageType, [...(groups.get(p.packageType) ?? []), p]);
-  return [...groups.entries()].map(([packageType, items]) => ({
-    packageType,
+  const groups = new Map<string, PackageData[]>();
+  for (const p of [...packages].sort((a, b) => a.line - b.line || a.position - b.position)) {
+    const key = `${p.line}:${p.packageType}`;
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  return [...groups.values()].map((items) => ({
+    line: items[0]!.line,
+    packageType: items[0]!.packageType,
     packages: items,
     marks: items.map((p) => p.marks),
     count: items.length,

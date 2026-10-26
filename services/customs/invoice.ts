@@ -56,6 +56,18 @@ export type InvoiceParty = {
   taxId: string | null;
 };
 
+export type InvoiceLine = {
+  /** Item number, the same on every document. */
+  position: number;
+  description: string;
+  hsCode: string;
+  originCountry: string;
+  quantity: number;
+  unitPrice: number;
+  netWeightKg: number;
+  grossWeightKg: number;
+};
+
 export type InvoiceData = {
   invoiceNumber: string;
   issuedAt: string;
@@ -65,29 +77,39 @@ export type InvoiceData = {
   incoterm: Incoterm;
   incotermPlace: string;
   currency: string;
-  originCountry: string;
   packageCount: number;
   grossWeightKg: number;
   netWeightKg: number;
-  line: { description: string; hsCode: string; quantity: number; unitPrice: number };
+  /** At least one, ordered by position. */
+  lines: InvoiceLine[];
   signatory: { name: string; title: string | null };
 };
 
-export const INVOICE_COLUMNS =
-  "invoice_number, created_at, description, country, hs_code, quantity, unit_price, currency, incoterm, incoterm_place, country_of_origin, package_count, gross_weight_kg, net_weight_kg, importer_name, importer_address, importer_tax_id, exporter_name, exporter_address, exporter_country, exporter_eori, exporter_tax_id, signatory_name, signatory_title";
+export const LINE_COLUMNS =
+  "position, description, hs_code, hs_description, estimated_duty, quantity, unit_price, origin_country, net_weight_kg, gross_weight_kg";
+
+export const INVOICE_COLUMNS = `invoice_number, created_at, country, currency, incoterm, incoterm_place, package_count, gross_weight_kg, net_weight_kg, importer_name, importer_address, importer_tax_id, exporter_name, exporter_address, exporter_country, exporter_eori, exporter_tax_id, signatory_name, signatory_title, shipment_lines (${LINE_COLUMNS})`;
+
+export type LineRow = {
+  position: number;
+  description: string;
+  hs_code: string;
+  hs_description: string;
+  estimated_duty: string;
+  quantity: number | null;
+  unit_price: number | string | null;
+  origin_country: string | null;
+  net_weight_kg: number | string | null;
+  gross_weight_kg: number | string | null;
+};
 
 export type InvoiceRow = {
   invoice_number: string | null;
   created_at: string;
-  description: string;
   country: string;
-  hs_code: string;
-  quantity: number | null;
-  unit_price: number | string | null;
   currency: string | null;
   incoterm: Incoterm | null;
   incoterm_place: string | null;
-  country_of_origin: string | null;
   package_count: number | null;
   gross_weight_kg: number | string | null;
   net_weight_kg: number | string | null;
@@ -101,18 +123,33 @@ export type InvoiceRow = {
   exporter_tax_id: string | null;
   signatory_name: string | null;
   signatory_title: string | null;
+  shipment_lines: LineRow[] | null;
 };
+
+/** Null if the line lacks invoice facts (shipments from before invoices). */
+function lineFromRow(row: LineRow): InvoiceLine | null {
+  const { quantity, unit_price, origin_country, net_weight_kg, gross_weight_kg } = row;
+  if (quantity == null || unit_price == null || !origin_country || net_weight_kg == null || gross_weight_kg == null) return null;
+  return {
+    position: row.position,
+    description: row.description,
+    hsCode: row.hs_code,
+    originCountry: origin_country,
+    quantity,
+    // PostgREST may return numeric columns as strings.
+    unitPrice: Number(unit_price),
+    netWeightKg: Number(net_weight_kg),
+    grossWeightKg: Number(gross_weight_kg),
+  };
+}
 
 /** Null for shipments created before invoices carried the full legal particulars. */
 export function invoiceFromRow(row: InvoiceRow): InvoiceData | null {
   const {
     invoice_number,
-    quantity,
-    unit_price,
     currency,
     incoterm,
     incoterm_place,
-    country_of_origin,
     package_count,
     gross_weight_kg,
     net_weight_kg,
@@ -124,14 +161,13 @@ export function invoiceFromRow(row: InvoiceRow): InvoiceData | null {
     signatory_name,
   } = row;
 
+  const lines = [...(row.shipment_lines ?? [])].sort((a, b) => a.position - b.position).map(lineFromRow);
+
   if (
     !invoice_number ||
-    quantity == null ||
-    unit_price == null ||
     !currency ||
     !incoterm ||
     !incoterm_place ||
-    !country_of_origin ||
     package_count == null ||
     gross_weight_kg == null ||
     net_weight_kg == null ||
@@ -140,7 +176,9 @@ export function invoiceFromRow(row: InvoiceRow): InvoiceData | null {
     !exporter_name ||
     !exporter_address ||
     !exporter_country ||
-    !signatory_name
+    !signatory_name ||
+    lines.length === 0 ||
+    lines.some((line) => line === null)
   ) {
     return null;
   }
@@ -166,17 +204,23 @@ export function invoiceFromRow(row: InvoiceRow): InvoiceData | null {
     incoterm,
     incotermPlace: incoterm_place,
     currency,
-    originCountry: country_of_origin,
     packageCount: package_count,
-    // PostgREST may return numeric columns as strings.
     grossWeightKg: Number(gross_weight_kg),
     netWeightKg: Number(net_weight_kg),
-    line: {
-      description: row.description,
-      hsCode: row.hs_code,
-      quantity,
-      unitPrice: Number(unit_price),
-    },
+    lines: lines as InvoiceLine[],
     signatory: { name: signatory_name, title: row.signatory_title },
   };
+}
+
+/** Distinct origin countries, in line order. */
+export function originCountries(invoice: Pick<InvoiceData, "lines">): string[] {
+  return [...new Set(invoice.lines.map((line) => line.originCountry))];
+}
+
+export function lineValue(line: Pick<InvoiceLine, "quantity" | "unitPrice">): number {
+  return Math.round(line.quantity * line.unitPrice * 100) / 100;
+}
+
+export function invoiceTotal(invoice: Pick<InvoiceData, "lines">): number {
+  return Math.round(invoice.lines.reduce((sum, line) => sum + lineValue(line), 0) * 100) / 100;
 }

@@ -2,7 +2,7 @@ import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/render
 
 import { packageVolumeM3, type ShipmentDocuments } from "@/services/customs/documents";
 import { adrDescription, documentNumber, packageTypeName } from "@/services/customs/freight";
-import { regionName } from "@/services/customs/invoice";
+import { originCountries, regionName } from "@/services/customs/invoice";
 
 import {
   BORDER,
@@ -58,6 +58,8 @@ export function PackingList({ data, logoUrl }: { data: ShipmentDocuments; logoUr
   const { invoice, packages, transport, dangerousGoods } = data;
   const number = documentNumber(invoice.invoiceNumber, "PL");
   const issued = formatDate(invoice.issuedAt);
+  const origins = originCountries(invoice);
+  const lineOf = (position: number) => invoice.lines.find((line) => line.position === position);
   const totals = {
     quantity: packages.reduce((sum, p) => sum + p.quantity, 0),
     net: packages.reduce((sum, p) => sum + p.netWeightKg, 0),
@@ -108,7 +110,8 @@ export function PackingList({ data, logoUrl }: { data: ShipmentDocuments; logoUr
             </View>
             <View style={[kit.row, kit.rowRule]}>
               <Box n={6} label="Country of origin" style={[s.cell, kit.colRule]}>
-                <Text style={kit.value}>{country(invoice.originCountry)}</Text>
+                <Text style={kit.value}>{origins.length === 1 ? country(origins[0]!) : "Various"}</Text>
+                {origins.length > 1 ? <Text style={kit.note}>Per item: {origins.join(", ")}</Text> : null}
               </Box>
               <Box n={7} label="Destination" style={s.cell}>
                 <Text style={kit.value}>{country(invoice.destination)}</Text>
@@ -131,7 +134,7 @@ export function PackingList({ data, logoUrl }: { data: ShipmentDocuments; logoUr
             <Text style={[kit.th, s.cNo, kit.hairlineCol]}>No.</Text>
             <Text style={[kit.th, s.cMarks, kit.hairlineCol]}>Marks</Text>
             <Text style={[kit.th, s.cType, kit.hairlineCol]}>Package</Text>
-            <Text style={[kit.th, s.cGoods, kit.hairlineCol]}>Contents</Text>
+            <Text style={[kit.th, s.cGoods, kit.hairlineCol]}>Contents (item)</Text>
             <Text style={[kit.th, s.cHs, kit.hairlineCol]}>HS code</Text>
             <Text style={[kit.th, s.cQty, kit.hairlineCol]}>Qty pcs</Text>
             <Text style={[kit.th, s.cNet, kit.hairlineCol]}>Net kg</Text>
@@ -139,22 +142,28 @@ export function PackingList({ data, logoUrl }: { data: ShipmentDocuments; logoUr
             <Text style={[kit.th, s.cDims, kit.hairlineCol]}>L × W × H cm</Text>
             <Text style={[kit.th, s.cVol]}>m³</Text>
           </View>
-          {packages.map((p, i) => (
-            <View key={p.position} style={[kit.row, i > 0 ? { borderTopWidth: 0.5, borderTopColor: HAIRLINE } : {}]} wrap={false}>
-              <Text style={[kit.td, s.cNo, kit.hairlineCol]}>{p.position}</Text>
-              <Text style={[kit.td, s.cMarks, kit.hairlineCol, kit.strong]}>{p.marks}</Text>
-              <Text style={[kit.td, s.cType, kit.hairlineCol]}>{packageTypeName(p.packageType)}</Text>
-              <Text style={[kit.td, s.cGoods, s.goodsText, kit.hairlineCol]}>{invoice.line.description}</Text>
-              <Text style={[kit.td, s.cHs, kit.hairlineCol]}>{invoice.line.hsCode}</Text>
-              <Text style={[kit.td, s.cQty, kit.hairlineCol]}>{integer.format(p.quantity)}</Text>
-              <Text style={[kit.td, s.cNet, kit.hairlineCol]}>{kilograms.format(p.netWeightKg)}</Text>
-              <Text style={[kit.td, s.cGross, kit.hairlineCol]}>{kilograms.format(p.grossWeightKg)}</Text>
-              <Text style={[kit.td, s.cDims, kit.hairlineCol]}>
-                {`${p.lengthCm}×${p.widthCm}×${p.heightCm}`}
-              </Text>
-              <Text style={[kit.td, s.cVol]}>{cubicMetres.format(packageVolumeM3(p))}</Text>
-            </View>
-          ))}
+          {packages.map((p, i) => {
+            const line = lineOf(p.line);
+            return (
+              <View key={p.position} style={[kit.row, i > 0 ? { borderTopWidth: 0.5, borderTopColor: HAIRLINE } : {}]} wrap={false}>
+                <Text style={[kit.td, s.cNo, kit.hairlineCol]}>{p.position}</Text>
+                <Text style={[kit.td, s.cMarks, kit.hairlineCol, kit.strong]}>{p.marks}</Text>
+                <Text style={[kit.td, s.cType, kit.hairlineCol]}>{packageTypeName(p.packageType)}</Text>
+                <Text style={[kit.td, s.cGoods, s.goodsText, kit.hairlineCol]}>
+                  {invoice.lines.length > 1 ? <Text style={kit.strong}>{p.line} · </Text> : null}
+                  {line?.description}
+                </Text>
+                <Text style={[kit.td, s.cHs, kit.hairlineCol]}>{line?.hsCode}</Text>
+                <Text style={[kit.td, s.cQty, kit.hairlineCol]}>{integer.format(p.quantity)}</Text>
+                <Text style={[kit.td, s.cNet, kit.hairlineCol]}>{kilograms.format(p.netWeightKg)}</Text>
+                <Text style={[kit.td, s.cGross, kit.hairlineCol]}>{kilograms.format(p.grossWeightKg)}</Text>
+                <Text style={[kit.td, s.cDims, kit.hairlineCol]}>
+                  {`${p.lengthCm}×${p.widthCm}×${p.heightCm}`}
+                </Text>
+                <Text style={[kit.td, s.cVol]}>{cubicMetres.format(packageVolumeM3(p))}</Text>
+              </View>
+            );
+          })}
           <View style={s.totalRow} wrap={false}>
             <Text style={[kit.td, s.cNo, kit.hairlineCol]} />
             <Text style={[kit.td, s.cMarks, kit.hairlineCol, kit.strong]}>Total</Text>
@@ -213,7 +222,9 @@ export function PackingList({ data, logoUrl }: { data: ShipmentDocuments; logoUr
         </View>
 
         <Text style={[kit.note, { marginTop: 6 }]}>
-          Weights and quantities agree with commercial invoice {invoice.invoiceNumber}. Goods of {regionName(invoice.originCountry)} origin.
+          Weights and quantities agree with commercial invoice {invoice.invoiceNumber}
+          {invoice.lines.length > 1 ? `, item by item` : ""}.{" "}
+          {origins.length === 1 ? `Goods of ${regionName(origins[0]!)} origin.` : "Origin of each item as stated on the invoice."}
         </Text>
 
         <Footer left={`${number} · ${invoice.exporter.name}`} />
