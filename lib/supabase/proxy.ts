@@ -6,7 +6,8 @@ import { getSupabaseEnv } from "./env";
 // Routes reachable without a session. Everything else is treated as part of
 // the authenticated (app) group — route groups don't appear in the URL, so
 // protection is deny-by-default. Add (marketing) routes here as they ship.
-const PUBLIC_PATHS = ["/login", "/signup", "/auth"];
+// /invites shows who invited whom before sign-in; joining still needs a session.
+const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/invites"];
 
 // Signed-in users have no reason to see these; send them to the app.
 const AUTH_PAGES = ["/login", "/signup"];
