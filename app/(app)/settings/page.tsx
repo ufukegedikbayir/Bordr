@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { CompanyProfileForm } from "@/components/features/workspaces/company-profile-form";
 import { LogoUploader } from "@/components/features/workspaces/logo-uploader";
+import { SettingsTabs } from "@/components/features/workspaces/settings-tabs";
 import { Alert } from "@/components/ui/alert";
 import { getCompanyProfile, getUserWorkspaces } from "@/services/workspaces/queries";
 
@@ -111,6 +112,7 @@ export default function SettingsPage() {
       <header className="mb-8">
         <h1 className="text-xl font-semibold tracking-[-0.015em] sm:text-2xl">Workspace settings</h1>
         <p className="mt-1.5 text-sm text-ink-muted">Your company&apos;s legal identity and branding on the documents Bordr issues.</p>
+        <SettingsTabs />
       </header>
 
       <Suspense fallback={<SettingsSkeleton />}>
